@@ -13,7 +13,7 @@ that error message.
 ```
 database/
   01_schema.sql        12 tables with PK, FK, UNIQUE, CHECK constraints
-  02_logic.sql         4 views, 1 function, 10 triggers, 7 procedures, 1 daily event
+  02_logic.sql         4 views, 1 function, 10 triggers, 9 procedures, 1 daily event
   03_sample_data.sql   sample data from the report + the 5 example queries
   04_access.sql        DCL: roles, GRANT / REVOKE, the website's MySQL user
 app/
@@ -64,8 +64,10 @@ Every sample user's password is `password123`.
 | rahul@bigbank.in | Customer | 2 accounts, an active loan with an overdue installment |
 | sneha@bigbank.in | Customer | 1 account, a pending deposit |
 | aman@bigbank.in | Customer | KYC still pending, so he cannot open an account |
-| meera@bigbank.in | Employee | work queue: KYC, deposits/withdrawals, loans |
-| arjun@bigbank.in | Branch Manager | everything Meera can do + branch summary |
+| meera@bigbank.in | Employee, Dwarka | work queue: KYC, deposits/withdrawals, loans |
+| arjun@bigbank.in | Branch Manager, Dwarka | everything Meera can do + branch page + add employees |
+| vikram@bigbank.in | Employee, Rohini | approves Sneha's requests (her account is in Rohini) |
+| neha@bigbank.in | Branch Manager, Rohini | same as Arjun, for Rohini |
 | kiran@bigbank.in | Auditor | read-only audit log |
 
 ## A 5-minute demo
@@ -82,11 +84,16 @@ Every sample user's password is `password123`.
    her balance goes up.
 5. **Reversal.** As Meera, open *Transactions* and reverse a transfer. A new transaction
    moves the money back, and the original row is untouched.
-6. **Loans.** As Sneha, apply for a loan. As Meera, approve it: the money is paid out and
-   the installments are created. As Sneha, pay an installment.
+6. **Loans.** As Sneha, apply for a loan. As Vikram (Sneha's branch), approve it: the money
+   is paid out and the installments are created. As Sneha, use *Pay next EMI* or
+   *Repay full loan* (on the dashboard or the *Loans* page).
+   Meera can't see or approve it, because it belongs to another branch.
 7. **Overdue.** As Meera, open *Loans* and click *Run overdue check*. Rahul's installment
    3 (due 2026-11-05) becomes Overdue.
-8. **Audit.** Log in as Kiran. Every action above is in the audit log, with who did it
+8. **Onboarding.** As Arjun, open *My branch* and add an employee. A temporary password is
+   shown once. Log in as the new employee: they see only Dwarka's data and can change
+   their password with the *Password* link.
+9. **Audit.** Log in as Kiran. Every action above is in the audit log, with who did it
    and the old and new values.
 
 ## Where each rule lives
@@ -104,6 +111,9 @@ Every sample user's password is `password123`.
 | Mistakes fixed by reversal, never deletion | `sp_reverse_transaction`, trigger `trg_txn_no_delete` | 02_logic.sql |
 | Loan linked to the customer's own account | trigger `trg_loans_before_insert` | 02_logic.sql |
 | Loan approval = payout + schedule | `sp_approve_loan` (WHILE loop creates installments) | 02_logic.sql |
+| Repay whole loan, all-or-nothing | `sp_repay_loan` (pays each unpaid installment, then closes the loan) | 02_logic.sql |
+| Staff only touch their own branch | branch check in `sp_review_transaction`, `sp_reverse_transaction`, `sp_approve_loan` + `WHERE branch_id = my branch` in app.py | 02_logic.sql, app.py |
+| Manager adds staff only to own branch | `sp_add_employee` has no branch parameter: it uses the manager's branch | 02_logic.sql |
 | Late installments flagged | `sp_mark_overdue` + daily `EVENT` | 02_logic.sql |
 | Over-budget warning | `sp_check_budget` → notification | 02_logic.sql |
 | Audit log written automatically | `AFTER UPDATE` triggers on kyc_records, accounts, loans, transactions | 02_logic.sql |
@@ -138,4 +148,7 @@ and interest of 525.00, then 437.50, then 350.00, and so on.
 - Sample balances are opening balances, so they are not the sum of the sample transactions.
 - Statuses `Approved` and `Failed` are allowed in `transactions.status` (to match the
   report) but are not used. A failed transfer is rolled back and never saved.
-- Employees can see and act on every branch, not only their own.
+- KYC review is not tied to a branch (a new customer has no account, so no branch yet).
+  Any employee can review KYC; everything else is limited to the employee's own branch.
+- A new employee's temporary password is shown once to the manager, who hands it over.
+  Changing it after the first login is recommended but not forced.
