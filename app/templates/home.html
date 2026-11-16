@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Welcome, {{ session.name }}</h1>
+<p>You are logged in as <strong>{{ session.role }}</strong>.</p>
+{% endblock %}
