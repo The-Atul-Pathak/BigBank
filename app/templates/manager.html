@@ -17,6 +17,32 @@
   </div>
 </div>
 
+{% if new_employee %}
+<div class="card" style="border-color: var(--green)">
+  <h2>Employee added: {{ new_employee.name }} (#{{ new_employee.user_id }})</h2>
+  <p>Give these login details to the new employee. The password is shown <strong>only once</strong>.
+     They should change it after their first login (<em>Password</em> link at the top).</p>
+  <p>Login ID: <code>{{ new_employee.email }}</code><br>
+     Temporary password: <code>{{ new_employee.password }}</code></p>
+</div>
+{% endif %}
+
+<h2>Add an employee to {{ branch.name }}</h2>
+<form method="post" action="{{ url_for('add_employee') }}" class="card">
+  <div class="grid">
+    <label>Full name <input name="name" required maxlength="60"></label>
+    <label>Login email <input type="email" name="email" required maxlength="80" placeholder="name@bigbank.in"></label>
+    <label>Phone <input name="phone" maxlength="15"></label>
+    <label>Designation
+      <select name="designation">
+        <option>Clerk</option><option>Cashier</option><option>Loan Officer</option>
+      </select>
+    </label>
+  </div>
+  <p class="muted">The new employee joins this branch and reports to you. A temporary password is created for them.</p>
+  <button>Add employee</button>
+</form>
+
 <h2>Staff of this branch</h2>
 <div class="table-wrap">
 <table>

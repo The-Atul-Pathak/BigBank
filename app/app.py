@@ -10,6 +10,7 @@ shows MySQL's message to the user.
 Run:  python app.py   then open http://127.0.0.1:5000
 """
 import os
+import secrets
 import uuid
 from functools import wraps
 
@@ -145,6 +146,28 @@ def register():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/password", methods=["GET", "POST"])
+@login_required()
+def change_password():
+    """Any user can change their password (e.g. a new employee replacing
+    the temporary password their manager gave them)."""
+    if request.method == "POST":
+        f = request.form
+        user = query_one("SELECT password_hash FROM users WHERE user_id = %s", (session["user_id"],))
+        if not check_password_hash(user["password_hash"], f["current"]):
+            flash("Current password is wrong.", "error")
+        elif f["new"] != f["confirm"]:
+            flash("The two new passwords do not match.", "error")
+        else:
+            execute(
+                "UPDATE users SET password_hash = %s WHERE user_id = %s",
+                (generate_password_hash(f["new"], method="pbkdf2:sha256"), session["user_id"]),
+            )
+            flash("Password changed.", "success")
+            return redirect(url_for("home"))
+    return render_template("password.html")
 
 
 # =====================================================================
@@ -569,6 +592,31 @@ def mark_overdue():
 @app.route("/manager")
 @login_required("BranchManager")
 def branch_summary():
+    return render_branch_page()
+
+
+@app.route("/manager/employees", methods=["POST"])
+@login_required("BranchManager")
+def add_employee():
+    """Onboard a new employee: create their login with a temporary password."""
+    f = request.form
+    temp_password = secrets.token_urlsafe(6)          # random, e.g. 'q7Rk-2xA'
+    password_hash = generate_password_hash(temp_password, method="pbkdf2:sha256")
+
+    # The last argument (0) is a placeholder for the OUT parameter p_new_user_id.
+    result = call("sp_add_employee", (session["user_id"], f["name"], f["email"].strip().lower(),
+                                      f["phone"] or None, password_hash, f["designation"], 0))
+    new_employee = {
+        "user_id": result[6],
+        "name": f["name"],
+        "email": f["email"].strip().lower(),
+        "password": temp_password,
+    }
+    # Shown ONCE on the page (never stored in plain text) so the manager can hand it over.
+    return render_branch_page(new_employee)
+
+
+def render_branch_page(new_employee=None):
     branch = query_one("SELECT * FROM v_branch_summary WHERE branch_id = %s", (my_branch(),))
     # Self-join on users: the manager_employee_id column points back to employees
     # (recursive relationship), so we join users twice to get both names.
@@ -581,7 +629,7 @@ def branch_summary():
         "ORDER BY e.manager_employee_id IS NOT NULL, u.name",
         (my_branch(),),
     )
-    return render_template("manager.html", branch=branch, staff=staff)
+    return render_template("manager.html", branch=branch, staff=staff, new_employee=new_employee)
 
 
 # =====================================================================

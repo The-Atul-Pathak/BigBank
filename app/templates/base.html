@@ -30,6 +30,7 @@
       </nav>
       <div class="who">
         {{ session.name }} <span class="badge">{{ session.role }}</span>
+        <a href="{{ url_for('change_password') }}">Password</a>
         <a href="{{ url_for('logout') }}">Log out</a>
       </div>
     {% endif %}

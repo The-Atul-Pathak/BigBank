@@ -848,6 +848,55 @@ BEGIN
     COMMIT;
 END$$
 
+-- ---------------------------------------------------------------------
+-- 8. ADD EMPLOYEE (branch manager onboards a new staff member)
+--    Creates the login (users) and the staff profile (employees) together.
+--    There is NO branch parameter: the new employee always joins the
+--    manager's own branch and reports to that manager.
+--    The website makes the temporary password and sends only its hash.
+-- ---------------------------------------------------------------------
+CREATE PROCEDURE sp_add_employee(
+    IN  p_manager_id    INT,
+    IN  p_name          VARCHAR(60),
+    IN  p_email         VARCHAR(80),
+    IN  p_phone         VARCHAR(15),
+    IN  p_password_hash VARCHAR(255),
+    IN  p_designation   VARCHAR(30),
+    OUT p_new_user_id   INT)          -- OUT parameter: sends the new id back to the caller
+BEGIN
+    DECLARE v_role   VARCHAR(20);
+    DECLARE v_branch INT;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    SELECT u.role, e.branch_id INTO v_role, v_branch
+    FROM users u JOIN employees e ON e.user_id = u.user_id
+    WHERE u.user_id = p_manager_id;
+
+    IF v_role IS NULL OR v_role <> 'BranchManager' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only a branch manager can add employees';
+    END IF;
+
+    START TRANSACTION;
+
+    INSERT INTO users (name, email, phone, password_hash, role)
+    VALUES (p_name, p_email, p_phone, p_password_hash, 'Employee');
+    SET p_new_user_id = LAST_INSERT_ID();
+
+    INSERT INTO employees (user_id, branch_id, designation, manager_employee_id)
+    VALUES (p_new_user_id, v_branch, p_designation, p_manager_id);
+
+    INSERT INTO audit_logs (actor_user_id, action, table_name, record_id, old_value, new_value)
+    VALUES (p_manager_id, 'EMPLOYEE_ADDED', 'employees', p_new_user_id, NULL,
+            CONCAT(p_designation, ' at branch ', v_branch));
+
+    COMMIT;
+END$$
+
 DELIMITER ;
 
 -- =====================================================================

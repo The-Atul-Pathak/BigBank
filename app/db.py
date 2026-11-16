@@ -6,6 +6,7 @@ It gives the rest of the app four small helpers:
     query_one(sql, params)  -> one row, or None                    for SELECT
     execute(sql, params)    -> id of the new row                   for INSERT / UPDATE
     call(name, args)        -> runs a stored procedure             for CALL
+                               (returns the args, with OUT parameters filled in)
 
 Always pass values through `params` (the %s placeholders). Never glue user
 input into the SQL string, because that would allow SQL injection.
@@ -67,6 +68,9 @@ def execute(sql, params=()):
 
 
 def call(proc_name, args=()):
+    """Run a stored procedure. Returns the arguments back, with any OUT
+    parameters filled in by MySQL (e.g. the new id from sp_add_employee)."""
     cur = get_db().cursor()
-    cur.callproc(proc_name, args)
+    result = cur.callproc(proc_name, args)
     cur.close()
+    return result

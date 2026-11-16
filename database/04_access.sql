@@ -59,6 +59,7 @@ GRANT EXECUTE ON PROCEDURE banking_system.sp_mark_overdue        TO 'employee_ro
 -- ---------- Branch manager: everything an employee has, plus branch summaries
 GRANT 'employee_role' TO 'manager_role';                 -- a role inside a role
 GRANT SELECT ON banking_system.v_branch_summary TO 'manager_role';
+GRANT EXECUTE ON PROCEDURE banking_system.sp_add_employee TO 'manager_role';   -- onboard staff
 
 -- ---------- Auditor: can only READ the audit log
 GRANT SELECT ON banking_system.audit_logs TO 'auditor_role';
