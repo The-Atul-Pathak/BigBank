@@ -72,4 +72,25 @@
   {% endfor %}
 </table>
 </div>
+
+<h2>My loans</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Loan</th><th class="num">Outstanding</th><th>Next due</th><th>Status</th><th>Repay</th></tr>
+  {% for l in loans %}
+  <tr>
+    <td><a href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
+    <td class="num">{{ l.outstanding_balance | money }}</td>
+    <td>{{ l.next_due_date or '-' }}</td>
+    <td><span class="badge {{ l.status }}">{{ l.status }}</span></td>
+    <td>
+      {% if l.status == 'Active' %}{% include "_repay_buttons.html" %}
+      {% else %}<span class="muted">waiting for approval</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="empty">No open loans. <a href="{{ url_for('my_loans') }}">Apply for one</a></td></tr>
+  {% endfor %}
+</table>
+</div>
 {% endblock %}

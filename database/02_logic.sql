@@ -59,7 +59,10 @@ SELECT l.loan_id,
        l.status,
        l.requested_at,
        COALESCE(SUM(CASE WHEN i.status <> 'Paid' THEN i.principal_part END), 0) AS outstanding_balance,
+       COALESCE(SUM(CASE WHEN i.status <> 'Paid'
+                         THEN i.principal_part + i.interest_part END), 0)       AS amount_to_close,
        COALESCE(SUM(i.status = 'Paid'), 0)                                     AS installments_paid,
+       MIN(CASE WHEN i.status <> 'Paid' THEN i.installment_no END)              AS next_installment_no,
        MIN(CASE WHEN i.status <> 'Paid' THEN i.due_date END)                    AS next_due_date
 FROM loans l
 JOIN users u ON u.user_id = l.customer_id
@@ -710,7 +713,93 @@ BEGIN
 END$$
 
 -- ---------------------------------------------------------------------
--- 6. MARK OVERDUE installments (run daily by the event below,
+-- 6. REPAY THE WHOLE LOAN at once.
+--    Same as paying every remaining installment today: each unpaid
+--    installment gets its own Withdrawal transaction (oldest first),
+--    then the loan is Closed. All in ONE database transaction, so either
+--    every installment is paid or none is.
+-- ---------------------------------------------------------------------
+CREATE PROCEDURE sp_repay_loan(
+    IN p_user_id INT,
+    IN p_loan_id INT)
+BEGIN
+    DECLARE v_owner       INT;
+    DECLARE v_loan_status VARCHAR(10);
+    DECLARE v_account     INT;
+    DECLARE v_total       DECIMAL(12,2);
+    DECLARE v_balance     DECIMAL(12,2);
+    DECLARE v_min_balance DECIMAL(12,2);
+    DECLARE v_acc_status  VARCHAR(10);
+    DECLARE v_no          INT;
+    DECLARE v_emi         DECIMAL(12,2);
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    START TRANSACTION;
+
+    SELECT customer_id, status, linked_account_id INTO v_owner, v_loan_status, v_account
+    FROM loans WHERE loan_id = p_loan_id FOR UPDATE;
+
+    IF v_owner IS NULL OR v_owner <> p_user_id THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Loan not found';
+    END IF;
+    IF v_loan_status <> 'Active' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Loan is not active';
+    END IF;
+
+    -- Total of all unpaid installments (and lock them)
+    SELECT SUM(principal_part + interest_part) INTO v_total
+    FROM loan_installments
+    WHERE loan_id = p_loan_id AND status <> 'Paid' FOR UPDATE;
+
+    SELECT a.balance, a.status, t.min_balance INTO v_balance, v_acc_status, v_min_balance
+    FROM accounts a JOIN account_types t ON t.account_type_id = a.account_type_id
+    WHERE a.account_id = v_account FOR UPDATE;
+
+    IF v_acc_status <> 'Active' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Linked account is not Active';
+    END IF;
+    IF v_balance - v_total < v_min_balance THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Insufficient balance to repay the whole loan';
+    END IF;
+
+    -- Pay the unpaid installments one by one, oldest first
+    SELECT MIN(installment_no) INTO v_no
+    FROM loan_installments WHERE loan_id = p_loan_id AND status <> 'Paid';
+
+    WHILE v_no IS NOT NULL DO
+        SELECT principal_part + interest_part INTO v_emi
+        FROM loan_installments WHERE loan_id = p_loan_id AND installment_no = v_no;
+
+        UPDATE accounts SET balance = balance - v_emi WHERE account_id = v_account;
+
+        INSERT INTO transactions (source_account_id, initiated_by_user_id, type, amount, status, idempotency_key)
+        VALUES (v_account, p_user_id, 'Withdrawal', v_emi, 'Success',
+                CONCAT('EMI-', p_loan_id, '-', v_no));
+
+        UPDATE loan_installments
+           SET status = 'Paid', payment_transaction_id = LAST_INSERT_ID()
+         WHERE loan_id = p_loan_id AND installment_no = v_no;
+
+        -- next unpaid installment (MIN returns NULL when none are left, ending the loop)
+        SELECT MIN(installment_no) INTO v_no
+        FROM loan_installments WHERE loan_id = p_loan_id AND status <> 'Paid';
+    END WHILE;
+
+    UPDATE loans SET status = 'Closed' WHERE loan_id = p_loan_id;
+
+    INSERT INTO notifications (user_id, category, message)
+    VALUES (p_user_id, 'Loan', CONCAT('Loan ', p_loan_id, ' fully repaid: Rs ', v_total));
+
+    COMMIT;
+END$$
+
+-- ---------------------------------------------------------------------
+-- 7. MARK OVERDUE installments (run daily by the event below,
 --    or by an employee from the website).
 -- ---------------------------------------------------------------------
 CREATE PROCEDURE sp_mark_overdue()

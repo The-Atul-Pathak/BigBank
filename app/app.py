@@ -173,10 +173,15 @@ def customer_home():
         "ORDER BY created_at DESC, notification_id DESC LIMIT 10",
         (uid,),
     )
+    loans = query(
+        "SELECT * FROM v_loan_summary WHERE customer_id = %s AND status IN ('Requested', 'Active') "
+        "ORDER BY loan_id",
+        (uid,),
+    )
     return render_template(
         "customer_home.html",
         customer=customer, latest_kyc=latest_kyc,
-        accounts=accounts, notifications=notifications,
+        accounts=accounts, notifications=notifications, loans=loans,
     )
 
 
@@ -370,7 +375,16 @@ def loan_detail(loan_id):
 def pay_installment(loan_id, installment_no):
     call("sp_pay_installment", (session["user_id"], loan_id, installment_no))
     flash(f"Installment {installment_no} paid.", "success")
-    return redirect(url_for("loan_detail", loan_id=loan_id))
+    return redirect(request.referrer or url_for("loan_detail", loan_id=loan_id))
+
+
+@app.route("/loans/<int:loan_id>/repay", methods=["POST"])
+@login_required("Customer")
+def repay_loan(loan_id):
+    """Pay every remaining installment now and close the loan."""
+    call("sp_repay_loan", (session["user_id"], loan_id))
+    flash(f"Loan {loan_id} fully repaid and closed.", "success")
+    return redirect(request.referrer or url_for("loan_detail", loan_id=loan_id))
 
 
 # =====================================================================

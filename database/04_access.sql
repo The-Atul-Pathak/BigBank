@@ -31,6 +31,7 @@ GRANT INSERT ON banking_system.loans              TO 'customer_role';   -- apply
 GRANT INSERT ON banking_system.transactions       TO 'customer_role';   -- request deposit / withdrawal
 GRANT EXECUTE ON PROCEDURE banking_system.sp_transfer        TO 'customer_role';
 GRANT EXECUTE ON PROCEDURE banking_system.sp_pay_installment TO 'customer_role';
+GRANT EXECUTE ON PROCEDURE banking_system.sp_repay_loan      TO 'customer_role';
 
 -- ---------- Employee: reads banking data, reviews things
 GRANT SELECT ON banking_system.users                  TO 'employee_role';

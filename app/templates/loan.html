@@ -9,6 +9,9 @@
     Borrowed {{ loan.principal | money }} at {{ loan.interest_rate }}% for {{ loan.tenure_months }} months.
     Installments are paid from account {{ loan.linked_account_id }}.
   </p>
+  {% if loan.status == 'Active' %}
+    {% with l = loan %}{% include "_repay_buttons.html" %}{% endwith %}
+  {% endif %}
 </div>
 
 <h2>Repayment schedule</h2>
