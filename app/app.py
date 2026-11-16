@@ -321,6 +321,58 @@ def cash_request():
     return redirect(url_for("money_page"))
 
 
+@app.route("/loans")
+@login_required("Customer")
+def my_loans():
+    uid = session["user_id"]
+    loans = query("SELECT * FROM v_loan_summary WHERE customer_id = %s ORDER BY loan_id DESC", (uid,))
+    accounts = query(
+        "SELECT * FROM v_account_overview WHERE customer_id = %s AND status = 'Active'", (uid,)
+    )
+    return render_template("loans.html", loans=loans, accounts=accounts)
+
+
+@app.route("/loans/apply", methods=["POST"])
+@login_required("Customer")
+def apply_loan():
+    # interest_rate is not sent: the column DEFAULT (10.50) is used.
+    # trg_loans_before_insert makes sure the linked account is the customer's own.
+    loan_id = execute(
+        "INSERT INTO loans (customer_id, linked_account_id, principal, tenure_months) "
+        "VALUES (%s, %s, %s, %s)",
+        (session["user_id"], request.form["linked_account_id"],
+         request.form["principal"], request.form["tenure_months"]),
+    )
+    flash(f"Loan {loan_id} requested. An employee will review it.", "success")
+    return redirect(url_for("my_loans"))
+
+
+@app.route("/loans/<int:loan_id>")
+@login_required("Customer")
+def loan_detail(loan_id):
+    loan = query_one(
+        "SELECT * FROM v_loan_summary WHERE loan_id = %s AND customer_id = %s",
+        (loan_id, session["user_id"]),
+    )
+    if loan is None:
+        flash("Loan not found.", "error")
+        return redirect(url_for("my_loans"))
+    installments = query(
+        "SELECT *, principal_part + interest_part AS emi FROM loan_installments "
+        "WHERE loan_id = %s ORDER BY installment_no",
+        (loan_id,),
+    )
+    return render_template("loan.html", loan=loan, installments=installments)
+
+
+@app.route("/loans/<int:loan_id>/pay/<int:installment_no>", methods=["POST"])
+@login_required("Customer")
+def pay_installment(loan_id, installment_no):
+    call("sp_pay_installment", (session["user_id"], loan_id, installment_no))
+    flash(f"Installment {installment_no} paid.", "success")
+    return redirect(url_for("loan_detail", loan_id=loan_id))
+
+
 # =====================================================================
 # EMPLOYEE pages (branch managers can use them too)
 # =====================================================================
@@ -341,7 +393,13 @@ def staff_home():
         "JOIN users u ON u.user_id = t.initiated_by_user_id "
         "WHERE t.status = 'Pending' ORDER BY t.created_at"
     )
-    return render_template("staff_home.html", pending_kyc=pending_kyc, pending_txns=pending_txns)
+    pending_loans = query(
+        "SELECT * FROM v_loan_summary WHERE status = 'Requested' ORDER BY requested_at"
+    )
+    return render_template(
+        "staff_home.html",
+        pending_kyc=pending_kyc, pending_txns=pending_txns, pending_loans=pending_loans,
+    )
 
 
 @app.route("/staff/kyc/<int:kyc_id>", methods=["POST"])
@@ -404,6 +462,40 @@ def reverse_transaction(txn_id):
     call("sp_reverse_transaction", (session["user_id"], txn_id))
     flash(f"Transaction {txn_id} reversed.", "success")
     return redirect(url_for("staff_transactions"))
+
+
+@app.route("/staff/loans/<int:loan_id>", methods=["POST"])
+@login_required(*STAFF)
+def review_loan(loan_id):
+    if request.form["decision"] == "Approve":
+        # Pays out the money and creates the installments, all in one transaction.
+        call("sp_approve_loan", (session["user_id"], loan_id))
+        flash(f"Loan {loan_id} approved and paid out.", "success")
+    else:
+        execute(
+            "UPDATE loans SET status = 'Rejected', reviewed_by_employee_id = %s "
+            "WHERE loan_id = %s AND status = 'Requested'",
+            (session["user_id"], loan_id),
+        )
+        flash(f"Loan {loan_id} rejected.", "success")
+    return redirect(url_for("staff_home"))
+
+
+@app.route("/staff/loans")
+@login_required(*STAFF)
+def staff_loans():
+    loans = query("SELECT * FROM v_loan_summary ORDER BY loan_id DESC")
+    overdue = query("SELECT * FROM v_overdue_installments ORDER BY days_overdue DESC")
+    return render_template("staff_loans.html", loans=loans, overdue=overdue)
+
+
+@app.route("/staff/loans/mark-overdue", methods=["POST"])
+@login_required(*STAFF)
+def mark_overdue():
+    # The same procedure also runs automatically every day (MySQL EVENT).
+    call("sp_mark_overdue")
+    flash("Overdue check done.", "success")
+    return redirect(url_for("staff_loans"))
 
 
 if __name__ == "__main__":

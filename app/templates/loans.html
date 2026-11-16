@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}My loans{% endblock %}
+{% block content %}
+<h1>My loans</h1>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Loan</th><th class="num">Amount</th><th>Rate</th><th>Months</th><th>Paid</th>
+      <th class="num">Outstanding</th><th>Next due</th><th>Status</th></tr>
+  {% for l in loans %}
+  <tr>
+    <td><a href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
+    <td class="num">{{ l.principal | money }}</td>
+    <td>{{ l.interest_rate }}%</td>
+    <td>{{ l.tenure_months }}</td>
+    <td>{{ l.installments_paid }} / {{ l.tenure_months }}</td>
+    <td class="num">{{ l.outstanding_balance | money }}</td>
+    <td>{{ l.next_due_date or '-' }}</td>
+    <td><span class="badge {{ l.status }}">{{ l.status }}</span></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="empty">No loans yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Apply for a loan</h2>
+{% if accounts %}
+<form method="post" action="{{ url_for('apply_loan') }}" class="card narrow" style="margin-left:0">
+  <label>Amount <input type="number" name="principal" min="1000" step="0.01" required></label>
+  <label>Months
+    <select name="tenure_months">
+      <option>3</option><option selected>6</option><option>12</option><option>24</option>
+    </select>
+  </label>
+  <label>Pay into / repay from account
+    <select name="linked_account_id">
+      {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} ({{ a.account_type }})</option>{% endfor %}
+    </select>
+  </label>
+  <p class="muted">Interest rate: 10.50% per year. An employee reviews every application.</p>
+  <button>Apply</button>
+</form>
+{% else %}
+  <p class="empty">You need an active account before you can apply for a loan.</p>
+{% endif %}
+{% endblock %}

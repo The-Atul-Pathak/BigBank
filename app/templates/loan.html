@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Loan {{ loan.loan_id }}{% endblock %}
+{% block content %}
+<h1>Loan {{ loan.loan_id }} <span class="badge {{ loan.status }}">{{ loan.status }}</span></h1>
+
+<div class="card">
+  <p class="stat">{{ loan.outstanding_balance | money }} <span class="muted">principal still to repay</span></p>
+  <p class="muted">
+    Borrowed {{ loan.principal | money }} at {{ loan.interest_rate }}% for {{ loan.tenure_months }} months.
+    Installments are paid from account {{ loan.linked_account_id }}.
+  </p>
+</div>
+
+<h2>Repayment schedule</h2>
+{% if not installments %}
+  <p class="empty">The schedule is created when an employee approves the loan.</p>
+{% else %}
+<div class="table-wrap">
+<table>
+  <tr><th>#</th><th>Due date</th><th class="num">Principal</th><th class="num">Interest</th>
+      <th class="num">EMI</th><th>Status</th><th></th></tr>
+  {% for i in installments %}
+  <tr>
+    <td>{{ i.installment_no }}</td>
+    <td>{{ i.due_date }}</td>
+    <td class="num">{{ i.principal_part | money }}</td>
+    <td class="num">{{ i.interest_part | money }}</td>
+    <td class="num">{{ i.emi | money }}</td>
+    <td><span class="badge {{ i.status }}">{{ i.status }}</span></td>
+    <td>
+      {% if i.status != 'Paid' and loan.status == 'Active' %}
+      <form method="post" action="{{ url_for('pay_installment', loan_id=loan.loan_id, installment_no=i.installment_no) }}" class="inline">
+        <button class="small">Pay</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}
