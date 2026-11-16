@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Branch summary{% endblock %}
+{% block content %}
+<h1>Branch summary</h1>
+
+<div class="grid">
+  {% for b in branches %}
+  <div class="card">
+    <h2>{{ b.name }} <span class="muted">{{ b.ifsc }}</span></h2>
+    <p class="stat">{{ b.total_balance | money }}</p>
+    <p class="muted">
+      held in {{ b.accounts }} account{{ 's' if b.accounts != 1 }}<br>
+      {{ b.active_loans }} active loan{{ 's' if b.active_loans != 1 }},
+      {{ b.employees }} employee{{ 's' if b.employees != 1 }}
+    </p>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>Staff</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>ID</th><th>Name</th><th>Designation</th><th>Branch</th><th>Reports to</th></tr>
+  {% for s in staff %}
+  <tr>
+    <td>{{ s.user_id }}</td>
+    <td>{{ s.name }}</td>
+    <td>{{ s.designation }}</td>
+    <td>{{ s.branch_name }}</td>
+    <td>{{ s.manager_name or '-' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

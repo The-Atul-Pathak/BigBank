@@ -87,7 +87,7 @@ def home():
         return redirect(url_for("customer_home"))
     if role in ("Employee", "BranchManager"):
         return redirect(url_for("staff_home"))
-    return render_template("home.html")
+    return redirect(url_for("audit_log"))  # Auditor
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -496,6 +496,45 @@ def mark_overdue():
     call("sp_mark_overdue")
     flash("Overdue check done.", "success")
     return redirect(url_for("staff_loans"))
+
+
+# =====================================================================
+# BRANCH MANAGER page
+# =====================================================================
+
+@app.route("/manager")
+@login_required("BranchManager")
+def branch_summary():
+    branches = query("SELECT * FROM v_branch_summary ORDER BY branch_id")
+    # Self-join on users: the manager_employee_id column points back to employees
+    # (recursive relationship), so we join users twice to get both names.
+    staff = query(
+        "SELECT e.user_id, u.name, e.designation, b.name AS branch_name, m.name AS manager_name "
+        "FROM employees e "
+        "JOIN users u    ON u.user_id = e.user_id "
+        "JOIN branches b ON b.branch_id = e.branch_id "
+        "LEFT JOIN users m ON m.user_id = e.manager_employee_id "
+        "ORDER BY e.branch_id, e.manager_employee_id IS NOT NULL, u.name"
+    )
+    return render_template("manager.html", branches=branches, staff=staff)
+
+
+# =====================================================================
+# AUDITOR page (read-only)
+# =====================================================================
+
+@app.route("/audit")
+@login_required("Auditor")
+def audit_log():
+    table = request.args.get("table", "")
+    logs = query(
+        "SELECT a.*, u.name AS actor_name, u.role AS actor_role "
+        "FROM audit_logs a JOIN users u ON u.user_id = a.actor_user_id "
+        "WHERE %s = '' OR a.table_name = %s "
+        "ORDER BY a.logged_at DESC, a.log_id DESC LIMIT 200",
+        (table, table),
+    )
+    return render_template("audit.html", logs=logs, table=table)
 
 
 if __name__ == "__main__":
