@@ -93,8 +93,11 @@ def home():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        # LEFT JOIN: staff have a row in employees (with their branch), others get NULL.
         user = query_one(
-            "SELECT user_id, name, password_hash, role FROM users WHERE email = %s",
+            "SELECT u.user_id, u.name, u.password_hash, u.role, e.branch_id "
+            "FROM users u LEFT JOIN employees e ON e.user_id = u.user_id "
+            "WHERE u.email = %s",
             (request.form["email"].strip().lower(),),
         )
         if user and check_password_hash(user["password_hash"], request.form["password"]):
@@ -102,6 +105,7 @@ def login():
             session["user_id"] = user["user_id"]
             session["name"] = user["name"]
             session["role"] = user["role"]
+            session["branch_id"] = user["branch_id"]   # None for customers and the auditor
             return redirect(url_for("home"))
         flash("Wrong email or password.", "error")
     return render_template("login.html")
@@ -389,8 +393,20 @@ def repay_loan(loan_id):
 
 # =====================================================================
 # EMPLOYEE pages (branch managers can use them too)
+#
+# Staff only see and act on THEIR OWN BRANCH: every query below has
+# "branch_id = my branch" in it. The stored procedures check the branch
+# again, so typing another account's id into the URL does not help.
+#
+# KYC is the one exception: a new customer has no account yet, so they do
+# not belong to any branch. Any employee can review KYC.
 # =====================================================================
 STAFF = ("Employee", "BranchManager")
+
+
+def my_branch():
+    """The branch of the logged-in employee or manager (saved at login)."""
+    return session["branch_id"]
 
 
 @app.route("/staff")
@@ -402,13 +418,19 @@ def staff_home():
         "JOIN users u ON u.user_id = k.customer_id "
         "WHERE k.status = 'Pending' ORDER BY k.submitted_at"
     )
+    # A deposit/withdrawal touches one account: the source OR the destination.
     pending_txns = query(
         "SELECT t.*, u.name FROM transactions t "
-        "JOIN users u ON u.user_id = t.initiated_by_user_id "
-        "WHERE t.status = 'Pending' ORDER BY t.created_at"
+        "JOIN users u    ON u.user_id = t.initiated_by_user_id "
+        "JOIN accounts a ON a.account_id = COALESCE(t.source_account_id, t.destination_account_id) "
+        "WHERE t.status = 'Pending' AND a.branch_id = %s "
+        "ORDER BY t.created_at",
+        (my_branch(),),
     )
     pending_loans = query(
-        "SELECT * FROM v_loan_summary WHERE status = 'Requested' ORDER BY requested_at"
+        "SELECT * FROM v_loan_summary WHERE status = 'Requested' AND branch_id = %s "
+        "ORDER BY requested_at",
+        (my_branch(),),
     )
     return render_template(
         "staff_home.html",
@@ -443,13 +465,24 @@ def review_transaction(txn_id):
 @app.route("/staff/accounts")
 @login_required(*STAFF)
 def staff_accounts():
-    accounts = query("SELECT * FROM v_account_overview ORDER BY account_id")
+    accounts = query(
+        "SELECT * FROM v_account_overview WHERE branch_id = %s ORDER BY account_id",
+        (my_branch(),),
+    )
     return render_template("staff_accounts.html", accounts=accounts)
 
 
 @app.route("/staff/accounts/<int:account_id>/status", methods=["POST"])
 @login_required(*STAFF)
 def set_account_status(account_id):
+    in_my_branch = query_one(
+        "SELECT account_id FROM accounts WHERE account_id = %s AND branch_id = %s",
+        (account_id, my_branch()),
+    )
+    if in_my_branch is None:
+        flash("Account not found in your branch.", "error")
+        return redirect(url_for("staff_accounts"))
+
     # trg_accounts_after_update writes the audit log and tells the customer.
     status = request.form["status"]  # 'Active' or 'Frozen'
     execute("UPDATE accounts SET status = %s WHERE account_id = %s", (status, account_id))
@@ -461,11 +494,15 @@ def set_account_status(account_id):
 @login_required(*STAFF)
 def staff_transactions():
     # Self-join: for each transaction, find the row that reversed it (if any).
+    # EXISTS: keep transactions where the source OR destination is in my branch.
     transactions = query(
         "SELECT t.*, r.transaction_id AS reversed_by "
         "FROM transactions t "
         "LEFT JOIN transactions r ON r.reversal_of_transaction_id = t.transaction_id "
-        "ORDER BY t.transaction_id DESC LIMIT 50"
+        "WHERE EXISTS (SELECT 1 FROM accounts a WHERE a.branch_id = %s "
+        "              AND a.account_id IN (t.source_account_id, t.destination_account_id)) "
+        "ORDER BY t.transaction_id DESC LIMIT 50",
+        (my_branch(),),
     )
     return render_template("staff_transactions.html", transactions=transactions)
 
@@ -486,6 +523,13 @@ def review_loan(loan_id):
         call("sp_approve_loan", (session["user_id"], loan_id))
         flash(f"Loan {loan_id} approved and paid out.", "success")
     else:
+        in_my_branch = query_one(
+            "SELECT loan_id FROM v_loan_summary WHERE loan_id = %s AND branch_id = %s",
+            (loan_id, my_branch()),
+        )
+        if in_my_branch is None:
+            flash("Loan not found in your branch.", "error")
+            return redirect(url_for("staff_home"))
         execute(
             "UPDATE loans SET status = 'Rejected', reviewed_by_employee_id = %s "
             "WHERE loan_id = %s AND status = 'Requested'",
@@ -498,8 +542,14 @@ def review_loan(loan_id):
 @app.route("/staff/loans")
 @login_required(*STAFF)
 def staff_loans():
-    loans = query("SELECT * FROM v_loan_summary ORDER BY loan_id DESC")
-    overdue = query("SELECT * FROM v_overdue_installments ORDER BY days_overdue DESC")
+    loans = query(
+        "SELECT * FROM v_loan_summary WHERE branch_id = %s ORDER BY loan_id DESC",
+        (my_branch(),),
+    )
+    overdue = query(
+        "SELECT * FROM v_overdue_installments WHERE branch_id = %s ORDER BY days_overdue DESC",
+        (my_branch(),),
+    )
     return render_template("staff_loans.html", loans=loans, overdue=overdue)
 
 
@@ -519,18 +569,19 @@ def mark_overdue():
 @app.route("/manager")
 @login_required("BranchManager")
 def branch_summary():
-    branches = query("SELECT * FROM v_branch_summary ORDER BY branch_id")
+    branch = query_one("SELECT * FROM v_branch_summary WHERE branch_id = %s", (my_branch(),))
     # Self-join on users: the manager_employee_id column points back to employees
     # (recursive relationship), so we join users twice to get both names.
     staff = query(
-        "SELECT e.user_id, u.name, e.designation, b.name AS branch_name, m.name AS manager_name "
+        "SELECT e.user_id, u.name, u.email, e.designation, m.name AS manager_name "
         "FROM employees e "
-        "JOIN users u    ON u.user_id = e.user_id "
-        "JOIN branches b ON b.branch_id = e.branch_id "
+        "JOIN users u ON u.user_id = e.user_id "
         "LEFT JOIN users m ON m.user_id = e.manager_employee_id "
-        "ORDER BY e.branch_id, e.manager_employee_id IS NOT NULL, u.name"
+        "WHERE e.branch_id = %s "
+        "ORDER BY e.manager_employee_id IS NOT NULL, u.name",
+        (my_branch(),),
     )
-    return render_template("manager.html", branches=branches, staff=staff)
+    return render_template("manager.html", branch=branch, staff=staff)
 
 
 # =====================================================================

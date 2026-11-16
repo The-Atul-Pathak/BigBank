@@ -22,7 +22,7 @@
           <a href="{{ url_for('staff_transactions') }}">Transactions</a>
           <a href="{{ url_for('staff_loans') }}">Loans</a>
           {% if session.role == 'BranchManager' %}
-            <a href="{{ url_for('branch_summary') }}">Branch summary</a>
+            <a href="{{ url_for('branch_summary') }}">My branch</a>
           {% endif %}
         {% elif session.role == 'Auditor' %}
           <a href="{{ url_for('audit_log') }}">Audit log</a>

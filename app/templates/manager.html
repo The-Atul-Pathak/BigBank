@@ -1,32 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Branch summary{% endblock %}
+{% block title %}My branch{% endblock %}
 {% block content %}
-<h1>Branch summary</h1>
+<h1>{{ branch.name }} <span class="muted">{{ branch.ifsc }}</span></h1>
 
 <div class="grid">
-  {% for b in branches %}
   <div class="card">
-    <h2>{{ b.name }} <span class="muted">{{ b.ifsc }}</span></h2>
-    <p class="stat">{{ b.total_balance | money }}</p>
-    <p class="muted">
-      held in {{ b.accounts }} account{{ 's' if b.accounts != 1 }}<br>
-      {{ b.active_loans }} active loan{{ 's' if b.active_loans != 1 }},
-      {{ b.employees }} employee{{ 's' if b.employees != 1 }}
-    </p>
+    <h2>Money held</h2>
+    <p class="stat">{{ branch.total_balance | money }}</p>
+    <p class="muted">in {{ branch.accounts }} account{{ 's' if branch.accounts != 1 }}</p>
   </div>
-  {% endfor %}
+  <div class="card">
+    <h2>Loans and staff</h2>
+    <p class="stat">{{ branch.active_loans }}</p>
+    <p class="muted">active loan{{ 's' if branch.active_loans != 1 }},
+      {{ branch.employees }} staff member{{ 's' if branch.employees != 1 }}</p>
+  </div>
 </div>
 
-<h2>Staff</h2>
+<h2>Staff of this branch</h2>
 <div class="table-wrap">
 <table>
-  <tr><th>ID</th><th>Name</th><th>Designation</th><th>Branch</th><th>Reports to</th></tr>
+  <tr><th>ID</th><th>Name</th><th>Login email</th><th>Designation</th><th>Reports to</th></tr>
   {% for s in staff %}
   <tr>
     <td>{{ s.user_id }}</td>
     <td>{{ s.name }}</td>
+    <td>{{ s.email }}</td>
     <td>{{ s.designation }}</td>
-    <td>{{ s.branch_name }}</td>
     <td>{{ s.manager_name or '-' }}</td>
   </tr>
   {% endfor %}

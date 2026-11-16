@@ -26,7 +26,9 @@ INSERT INTO users (user_id, name, email, phone, password_hash, role) VALUES
     (102, 'Sneha Rao',      'sneha@bigbank.in', '9810000102', @pw, 'Customer'),
     (103, 'Aman Singh',     'aman@bigbank.in',  '9810000103', @pw, 'Customer'),
     (201, 'Meera Kapoor',   'meera@bigbank.in', '9810000201', @pw, 'Employee'),
+    (202, 'Vikram Shah',    'vikram@bigbank.in','9810000202', @pw, 'Employee'),
     (301, 'Arjun Malhotra', 'arjun@bigbank.in', '9810000301', @pw, 'BranchManager'),
+    (302, 'Neha Gupta',     'neha@bigbank.in',  '9810000302', @pw, 'BranchManager'),
     (401, 'Kiran Nair',     'kiran@bigbank.in', '9810000401', @pw, 'Auditor');
 
 -- ---------------------------------------------------------------------
@@ -35,11 +37,14 @@ INSERT INTO customers (user_id, dob, address, kyc_status) VALUES
     (102, '2000-09-23', 'Sector 7, Rohini, New Delhi',  'Approved'),
     (103, '2002-01-30', 'Janakpuri, New Delhi',         'Pending');   -- no accounts yet
 
--- Manager first, because Meera's row points to Arjun (recursive FK).
+-- Managers first, because each clerk's row points to their manager (recursive FK).
+-- Each branch has one manager and one clerk. Staff only see their own branch.
 -- The auditor (401) has no row here: an auditor is a user but not branch staff.
 INSERT INTO employees (user_id, branch_id, designation, manager_employee_id) VALUES
-    (301, 1, 'Branch Manager', NULL),
-    (201, 1, 'Clerk',          301);
+    (301, 1, 'Branch Manager', NULL),   -- Arjun, Dwarka
+    (302, 2, 'Branch Manager', NULL),   -- Neha, Rohini
+    (201, 1, 'Clerk',          301),    -- Meera reports to Arjun
+    (202, 2, 'Clerk',          302);    -- Vikram reports to Neha
 
 -- ---------------------------------------------------------------------
 INSERT INTO kyc_records (kyc_id, customer_id, doc_type, doc_ref, status, reviewed_by_employee_id, remarks, submitted_at) VALUES

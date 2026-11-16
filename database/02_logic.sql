@@ -53,6 +53,7 @@ SELECT l.loan_id,
        l.customer_id,
        u.name AS customer_name,
        l.linked_account_id,
+       a.branch_id,                       -- a loan belongs to the branch of its account
        l.principal,
        l.interest_rate,
        l.tenure_months,
@@ -65,7 +66,8 @@ SELECT l.loan_id,
        MIN(CASE WHEN i.status <> 'Paid' THEN i.installment_no END)              AS next_installment_no,
        MIN(CASE WHEN i.status <> 'Paid' THEN i.due_date END)                    AS next_due_date
 FROM loans l
-JOIN users u ON u.user_id = l.customer_id
+JOIN users u    ON u.user_id = l.customer_id
+JOIN accounts a ON a.account_id = l.linked_account_id
 LEFT JOIN loan_installments i ON i.loan_id = l.loan_id
 GROUP BY l.loan_id;
 
@@ -75,12 +77,14 @@ SELECT i.loan_id,
        i.installment_no,
        l.customer_id,
        u.name                               AS customer_name,
+       a.branch_id,
        i.due_date,
        i.principal_part + i.interest_part   AS emi,
        DATEDIFF(CURDATE(), i.due_date)      AS days_overdue
 FROM loan_installments i
-JOIN loans l ON l.loan_id = i.loan_id
-JOIN users u ON u.user_id = l.customer_id
+JOIN loans l    ON l.loan_id = i.loan_id
+JOIN users u    ON u.user_id = l.customer_id
+JOIN accounts a ON a.account_id = l.linked_account_id
 WHERE i.status = 'Overdue';
 
 -- One row per branch, for the branch manager.
@@ -394,7 +398,8 @@ BEGIN
     DECLARE v_acc_status  VARCHAR(10);
     DECLARE v_min_balance DECIMAL(12,2);
     DECLARE v_daily_limit DECIMAL(12,2);
-    DECLARE v_branch      INT;
+    DECLARE v_branch      INT;    -- the employee's branch
+    DECLARE v_acc_branch  INT;    -- the account's branch
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -419,10 +424,15 @@ BEGIN
     END IF;
 
     -- Lock the account row
-    SELECT a.customer_id, a.balance, a.status, a.daily_limit, t.min_balance
-      INTO v_owner, v_balance, v_acc_status, v_daily_limit, v_min_balance
+    SELECT a.customer_id, a.balance, a.status, a.daily_limit, t.min_balance, a.branch_id
+      INTO v_owner, v_balance, v_acc_status, v_daily_limit, v_min_balance, v_acc_branch
     FROM accounts a JOIN account_types t ON t.account_type_id = a.account_type_id
     WHERE a.account_id = v_account FOR UPDATE;
+
+    -- Staff can only act on accounts of their own branch
+    IF v_acc_branch <> v_branch THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'This account belongs to another branch';
+    END IF;
 
     IF p_decision = 'Reject' THEN
         UPDATE transactions
@@ -508,6 +518,11 @@ BEGIN
     IF EXISTS (SELECT 1 FROM transactions WHERE reversal_of_transaction_id = p_txn_id) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'This transaction is already reversed';
     END IF;
+    -- At least one of the two accounts must be in the employee's branch
+    IF NOT EXISTS (SELECT 1 FROM accounts
+                   WHERE branch_id = v_branch AND account_id IN (v_src, v_dst)) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'This transaction belongs to another branch';
+    END IF;
 
     -- Swap the direction: money goes back from the old destination to the old source.
     SET v_new_type = CASE v_type WHEN 'Deposit'    THEN 'Withdrawal'
@@ -561,7 +576,8 @@ BEGIN
     DECLARE v_tenure     INT;
     DECLARE v_account    INT;
     DECLARE v_acc_status VARCHAR(10);
-    DECLARE v_branch     INT;
+    DECLARE v_branch     INT;    -- the employee's branch
+    DECLARE v_acc_branch INT;    -- the linked account's branch
     DECLARE v_txn_id     INT;
     DECLARE v_i          INT DEFAULT 1;
     DECLARE v_remaining  DECIMAL(12,2);
@@ -588,7 +604,11 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'This loan is not waiting for approval';
     END IF;
 
-    SELECT status INTO v_acc_status FROM accounts WHERE account_id = v_account FOR UPDATE;
+    SELECT status, branch_id INTO v_acc_status, v_acc_branch
+    FROM accounts WHERE account_id = v_account FOR UPDATE;
+    IF v_acc_branch <> v_branch THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'This loan belongs to another branch';
+    END IF;
     IF v_acc_status <> 'Active' THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Linked account is not Active';
     END IF;
