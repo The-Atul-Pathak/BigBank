@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Hello, {{ session.name }}</h1>
+
+<div class="grid">
+  <!-- KYC -->
+  <div class="card">
+    <h2>KYC status: <span class="badge {{ customer.kyc_status }}">{{ customer.kyc_status }}</span></h2>
+    {% if latest_kyc %}
+      <p class="muted">Last document: {{ latest_kyc.doc_type }} ({{ latest_kyc.doc_ref }}),
+        <span class="badge {{ latest_kyc.status }}">{{ latest_kyc.status }}</span>
+        {% if latest_kyc.remarks %}<br>Remarks: {{ latest_kyc.remarks }}{% endif %}</p>
+    {% endif %}
+
+    {% if customer.kyc_status != 'Approved' and (not latest_kyc or latest_kyc.status in ('Rejected', 'NeedsCorrection')) %}
+      <form method="post" action="{{ url_for('submit_kyc') }}">
+        <label>Document type
+          <select name="doc_type">
+            <option>Aadhaar</option><option>PAN</option><option>Passport</option><option>Voter ID</option>
+          </select>
+        </label>
+        <label>Document number <input name="doc_ref" required maxlength="30"></label>
+        <button>Submit KYC</button>
+      </form>
+    {% elif customer.kyc_status != 'Approved' %}
+      <p>Your document is waiting for an employee to review it. You can open an account after it is approved.</p>
+    {% else %}
+      <p>You can open accounts and apply for loans.</p>
+    {% endif %}
+  </div>
+
+  <!-- Notifications -->
+  <div class="card">
+    <h2>Notifications</h2>
+    {% for n in notifications %}
+      <p class="{{ 'unread' if not n.is_read }}">
+        <span class="badge">{{ n.category }}</span> {{ n.message }}<br>
+        <span class="muted">{{ n.created_at }}</span>
+      </p>
+    {% else %}
+      <p class="empty">No notifications.</p>
+    {% endfor %}
+    {% if notifications %}
+      <form method="post" action="{{ url_for('mark_notifications_read') }}">
+        <button class="secondary small">Mark all as read</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<h2>My accounts</h2>
+<div class="table-wrap">
+<table>
+  <tr>
+    <th>Account</th><th>Type</th><th>Branch</th><th class="num">Balance</th>
+    <th class="num">Spent this month</th><th class="num">Budget left</th><th>Status</th>
+  </tr>
+  {% for a in accounts %}
+  <tr>
+    <td><a href="{{ url_for('account_detail', account_id=a.account_id) }}">{{ a.account_id }}</a></td>
+    <td>{{ a.account_type }}</td>
+    <td>{{ a.branch_name }}</td>
+    <td class="num">{{ a.balance | money }}</td>
+    <td class="num">{{ a.spent_this_month | money }}</td>
+    <td class="num">{{ a.budget_remaining | money if a.budget_remaining is not none else '-' }}</td>
+    <td><span class="badge {{ a.status }}">{{ a.status }}</span></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">No accounts yet.
+    {% if customer.kyc_status == 'Approved' %}<a href="{{ url_for('open_account') }}">Open one</a>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

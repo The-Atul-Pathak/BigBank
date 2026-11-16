@@ -11,7 +11,11 @@
     <a class="brand" href="{{ url_for('home') }}">BigBank</a>
     {% if session.user_id %}
       <nav>
-        {% block nav %}{% endblock %}
+        {% if session.role == 'Customer' %}
+          <a href="{{ url_for('customer_home') }}">Dashboard</a>
+          <a href="{{ url_for('money_page') }}">Move money</a>
+          <a href="{{ url_for('open_account') }}">Open account</a>
+        {% endif %}
       </nav>
       <div class="who">
         {{ session.name }} <span class="badge">{{ session.role }}</span>
