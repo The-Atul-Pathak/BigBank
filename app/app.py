@@ -85,6 +85,8 @@ def home():
         return redirect(url_for("login"))
     if role == "Customer":
         return redirect(url_for("customer_home"))
+    if role in ("Employee", "BranchManager"):
+        return redirect(url_for("staff_home"))
     return render_template("home.html")
 
 
@@ -317,6 +319,91 @@ def cash_request():
     )
     flash(f"{f['type']} request sent. An employee will approve it.", "success")
     return redirect(url_for("money_page"))
+
+
+# =====================================================================
+# EMPLOYEE pages (branch managers can use them too)
+# =====================================================================
+STAFF = ("Employee", "BranchManager")
+
+
+@app.route("/staff")
+@login_required(*STAFF)
+def staff_home():
+    """The employee's work queue: everything waiting for a decision."""
+    pending_kyc = query(
+        "SELECT k.*, u.name FROM kyc_records k "
+        "JOIN users u ON u.user_id = k.customer_id "
+        "WHERE k.status = 'Pending' ORDER BY k.submitted_at"
+    )
+    pending_txns = query(
+        "SELECT t.*, u.name FROM transactions t "
+        "JOIN users u ON u.user_id = t.initiated_by_user_id "
+        "WHERE t.status = 'Pending' ORDER BY t.created_at"
+    )
+    return render_template("staff_home.html", pending_kyc=pending_kyc, pending_txns=pending_txns)
+
+
+@app.route("/staff/kyc/<int:kyc_id>", methods=["POST"])
+@login_required(*STAFF)
+def review_kyc(kyc_id):
+    # The trigger trg_kyc_after_update then copies the decision to
+    # customers.kyc_status, writes the audit log and notifies the customer.
+    execute(
+        "UPDATE kyc_records SET status = %s, reviewed_by_employee_id = %s, remarks = %s "
+        "WHERE kyc_id = %s AND status = 'Pending'",
+        (request.form["decision"], session["user_id"], request.form["remarks"] or None, kyc_id),
+    )
+    flash(f"KYC {kyc_id} marked {request.form['decision']}.", "success")
+    return redirect(url_for("staff_home"))
+
+
+@app.route("/staff/transactions/<int:txn_id>/review", methods=["POST"])
+@login_required(*STAFF)
+def review_transaction(txn_id):
+    decision = request.form["decision"]  # 'Approve' or 'Reject'
+    call("sp_review_transaction", (session["user_id"], txn_id, decision))
+    result = "approved" if decision == "Approve" else "rejected"
+    flash(f"Transaction {txn_id} {result}.", "success")
+    return redirect(url_for("staff_home"))
+
+
+@app.route("/staff/accounts")
+@login_required(*STAFF)
+def staff_accounts():
+    accounts = query("SELECT * FROM v_account_overview ORDER BY account_id")
+    return render_template("staff_accounts.html", accounts=accounts)
+
+
+@app.route("/staff/accounts/<int:account_id>/status", methods=["POST"])
+@login_required(*STAFF)
+def set_account_status(account_id):
+    # trg_accounts_after_update writes the audit log and tells the customer.
+    status = request.form["status"]  # 'Active' or 'Frozen'
+    execute("UPDATE accounts SET status = %s WHERE account_id = %s", (status, account_id))
+    flash(f"Account {account_id} is now {status}.", "success")
+    return redirect(url_for("staff_accounts"))
+
+
+@app.route("/staff/transactions")
+@login_required(*STAFF)
+def staff_transactions():
+    # Self-join: for each transaction, find the row that reversed it (if any).
+    transactions = query(
+        "SELECT t.*, r.transaction_id AS reversed_by "
+        "FROM transactions t "
+        "LEFT JOIN transactions r ON r.reversal_of_transaction_id = t.transaction_id "
+        "ORDER BY t.transaction_id DESC LIMIT 50"
+    )
+    return render_template("staff_transactions.html", transactions=transactions)
+
+
+@app.route("/staff/transactions/<int:txn_id>/reverse", methods=["POST"])
+@login_required(*STAFF)
+def reverse_transaction(txn_id):
+    call("sp_reverse_transaction", (session["user_id"], txn_id))
+    flash(f"Transaction {txn_id} reversed.", "success")
+    return redirect(url_for("staff_transactions"))
 
 
 if __name__ == "__main__":

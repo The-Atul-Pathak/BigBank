@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Work queue{% endblock %}
+{% block content %}
+<h1>Work queue</h1>
+
+<h2>KYC waiting for review ({{ pending_kyc | length }})</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>KYC</th><th>Customer</th><th>Document</th><th>Submitted</th><th>Decision</th></tr>
+  {% for k in pending_kyc %}
+  <tr>
+    <td>{{ k.kyc_id }}</td>
+    <td>{{ k.name }} (#{{ k.customer_id }})</td>
+    <td>{{ k.doc_type }}: {{ k.doc_ref }}</td>
+    <td>{{ k.submitted_at }}</td>
+    <td>
+      <form method="post" action="{{ url_for('review_kyc', kyc_id=k.kyc_id) }}" class="inline">
+        <input name="remarks" placeholder="Remarks" maxlength="200">
+        <button name="decision" value="Approved" class="small">Approve</button>
+        <button name="decision" value="NeedsCorrection" class="small secondary">Needs correction</button>
+        <button name="decision" value="Rejected" class="small danger">Reject</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="empty">Nothing waiting.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Deposits and withdrawals waiting for approval ({{ pending_txns | length }})</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>ID</th><th>Customer</th><th>Type</th><th>Account</th><th class="num">Amount</th><th>Requested</th><th>Decision</th></tr>
+  {% for t in pending_txns %}
+  <tr>
+    <td>{{ t.transaction_id }}</td>
+    <td>{{ t.name }}</td>
+    <td>{{ t.type }}</td>
+    <td>{{ t.source_account_id or t.destination_account_id }}</td>
+    <td class="num">{{ t.amount | money }}</td>
+    <td>{{ t.created_at }}</td>
+    <td>
+      <form method="post" action="{{ url_for('review_transaction', txn_id=t.transaction_id) }}" class="inline">
+        <button name="decision" value="Approve" class="small">Approve</button>
+        <button name="decision" value="Reject" class="small danger">Reject</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">Nothing waiting.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

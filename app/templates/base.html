@@ -15,6 +15,10 @@
           <a href="{{ url_for('customer_home') }}">Dashboard</a>
           <a href="{{ url_for('money_page') }}">Move money</a>
           <a href="{{ url_for('open_account') }}">Open account</a>
+        {% elif session.role in ('Employee', 'BranchManager') %}
+          <a href="{{ url_for('staff_home') }}">Work queue</a>
+          <a href="{{ url_for('staff_accounts') }}">Accounts</a>
+          <a href="{{ url_for('staff_transactions') }}">Transactions</a>
         {% endif %}
       </nav>
       <div class="who">

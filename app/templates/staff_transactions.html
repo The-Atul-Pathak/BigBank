@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+{% block content %}
+<h1>Latest transactions</h1>
+<p class="muted">Transactions are never deleted. To fix a mistake, post a reversal: a new
+  transaction that moves the same amount back.</p>
+<div class="table-wrap">
+<table>
+  <tr><th>ID</th><th>Date</th><th>Type</th><th>From</th><th>To</th><th class="num">Amount</th><th>Status</th><th>Notes</th><th></th></tr>
+  {% for t in transactions %}
+  <tr>
+    <td>{{ t.transaction_id }}</td>
+    <td>{{ t.created_at }}</td>
+    <td>{{ t.type }}</td>
+    <td>{{ t.source_account_id or '-' }}</td>
+    <td>{{ t.destination_account_id or '-' }}</td>
+    <td class="num">{{ t.amount | money }}</td>
+    <td><span class="badge {{ t.status }}">{{ t.status }}</span></td>
+    <td>
+      {% if t.reversal_of_transaction_id %}reversal of #{{ t.reversal_of_transaction_id }}{% endif %}
+      {% if t.reversed_by %}reversed by #{{ t.reversed_by }}{% endif %}
+    </td>
+    <td>
+      {% if t.status == 'Success' and not t.reversal_of_transaction_id and not t.reversed_by %}
+      <form method="post" action="{{ url_for('reverse_transaction', txn_id=t.transaction_id) }}" class="inline">
+        <button class="small secondary">Reverse</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
