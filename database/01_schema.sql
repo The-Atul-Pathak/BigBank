@@ -1,0 +1,257 @@
+-- =====================================================================
+-- BigBank - Banking Management System
+-- File 1 of 4: TABLES
+--
+-- 12 tables, exactly as in the project report (section 5).
+-- Tables are created in dependency order: a table is created only after
+-- every table it points to with a FOREIGN KEY already exists.
+--
+-- Run order: 01_schema.sql -> 02_logic.sql -> 03_sample_data.sql -> 04_access.sql
+-- =====================================================================
+
+DROP DATABASE IF EXISTS banking_system;
+CREATE DATABASE banking_system;
+USE banking_system;
+
+-- ---------------------------------------------------------------------
+-- 1. branches : a physical bank branch
+-- ---------------------------------------------------------------------
+CREATE TABLE branches (
+    branch_id  INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(60) NOT NULL,
+    ifsc       VARCHAR(11) NOT NULL UNIQUE
+);
+
+-- ---------------------------------------------------------------------
+-- 2. users : everyone who can log in (one login table for all roles)
+-- ---------------------------------------------------------------------
+CREATE TABLE users (
+    user_id        INT AUTO_INCREMENT PRIMARY KEY,
+    name           VARCHAR(60)  NOT NULL,
+    email          VARCHAR(80)  NOT NULL UNIQUE,
+    phone          VARCHAR(15),
+    password_hash  VARCHAR(255) NOT NULL,
+    role           VARCHAR(20)  NOT NULL,
+    CONSTRAINT chk_users_role
+        CHECK (role IN ('Customer', 'Employee', 'BranchManager', 'Auditor'))
+);
+
+-- ---------------------------------------------------------------------
+-- 3. customers : extra details for users who are customers
+--    Specialization of users: the PK is also a FK to users (1 : 1).
+-- ---------------------------------------------------------------------
+CREATE TABLE customers (
+    user_id     INT PRIMARY KEY,
+    dob         DATE NOT NULL,
+    address     VARCHAR(150),
+    kyc_status  VARCHAR(15) DEFAULT 'Pending',
+    CONSTRAINT fk_customers_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT chk_customers_kyc
+        CHECK (kyc_status IN ('Pending', 'Approved', 'Rejected'))
+);
+
+-- ---------------------------------------------------------------------
+-- 4. employees : extra details for staff (also a specialization of users)
+--    manager_employee_id points back to this same table (recursive).
+-- ---------------------------------------------------------------------
+CREATE TABLE employees (
+    user_id              INT PRIMARY KEY,
+    branch_id            INT NOT NULL,
+    designation          VARCHAR(30),
+    manager_employee_id  INT NULL,            -- NULL for top-level staff
+    CONSTRAINT fk_employees_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_employees_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id),
+    CONSTRAINT fk_employees_manager
+        FOREIGN KEY (manager_employee_id) REFERENCES employees(user_id)
+);
+
+-- ---------------------------------------------------------------------
+-- 5. kyc_records : a KYC document submitted by a customer
+-- ---------------------------------------------------------------------
+CREATE TABLE kyc_records (
+    kyc_id                   INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id              INT NOT NULL,
+    doc_type                 VARCHAR(20) NOT NULL,     -- e.g. Aadhaar, PAN
+    doc_ref                  VARCHAR(30) NOT NULL,     -- document number
+    status                   VARCHAR(20) DEFAULT 'Pending',
+    reviewed_by_employee_id  INT NULL,                 -- NULL until reviewed
+    remarks                  VARCHAR(200),
+    submitted_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_kyc_customer
+        FOREIGN KEY (customer_id) REFERENCES customers(user_id),
+    CONSTRAINT fk_kyc_reviewer
+        FOREIGN KEY (reviewed_by_employee_id) REFERENCES employees(user_id),
+    CONSTRAINT chk_kyc_status
+        CHECK (status IN ('Pending', 'Approved', 'NeedsCorrection', 'Rejected'))
+);
+
+-- ---------------------------------------------------------------------
+-- 6. account_types : rules for each kind of account
+-- ---------------------------------------------------------------------
+CREATE TABLE account_types (
+    account_type_id  INT AUTO_INCREMENT PRIMARY KEY,
+    name             VARCHAR(20)   NOT NULL UNIQUE,   -- Savings, Current
+    interest_rate    DECIMAL(4,2)  NOT NULL,
+    max_daily_limit  DECIMAL(12,2) NOT NULL,
+    min_balance      DECIMAL(12,2) DEFAULT 0,
+    description      VARCHAR(150),
+    CONSTRAINT chk_types_rate  CHECK (interest_rate >= 0),
+    CONSTRAINT chk_types_limit CHECK (max_daily_limit > 0),
+    CONSTRAINT chk_types_min   CHECK (min_balance >= 0)
+);
+
+-- ---------------------------------------------------------------------
+-- 7. accounts : a customer's bank account
+--    Rule "daily_limit must not exceed the type's max_daily_limit" and
+--    rule "KYC must be Approved" are checked by triggers (02_logic.sql),
+--    because a CHECK constraint cannot look at another table.
+-- ---------------------------------------------------------------------
+CREATE TABLE accounts (
+    account_id       INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id      INT NOT NULL,
+    branch_id        INT NOT NULL,
+    account_type_id  INT NOT NULL,
+    balance          DECIMAL(12,2) DEFAULT 0,
+    daily_limit      DECIMAL(12,2) NOT NULL,
+    spending_budget  DECIMAL(12,2) NULL,          -- optional monthly budget
+    status           VARCHAR(10) DEFAULT 'Active',
+    opened_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_accounts_customer
+        FOREIGN KEY (customer_id) REFERENCES customers(user_id),
+    CONSTRAINT fk_accounts_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id),
+    CONSTRAINT fk_accounts_type
+        FOREIGN KEY (account_type_id) REFERENCES account_types(account_type_id),
+    CONSTRAINT chk_accounts_balance CHECK (balance >= 0),
+    CONSTRAINT chk_accounts_status  CHECK (status IN ('Active', 'Frozen', 'Closed'))
+);
+
+-- ---------------------------------------------------------------------
+-- 8. transactions : one deposit, withdrawal or transfer
+--    Deposit    : money comes in  -> only destination_account_id
+--    Withdrawal : money goes out  -> only source_account_id
+--    Transfer   : both accounts
+-- ---------------------------------------------------------------------
+CREATE TABLE transactions (
+    transaction_id              INT AUTO_INCREMENT PRIMARY KEY,
+    source_account_id           INT NULL,    -- NULL for deposits
+    destination_account_id      INT NULL,    -- NULL for withdrawals
+    branch_id                   INT NULL,    -- branch that processed it
+    initiated_by_user_id        INT NOT NULL,
+    reviewed_by_employee_id     INT NULL,    -- NULL until reviewed
+    reversal_of_transaction_id  INT NULL,    -- set only on a reversal row
+    type                        VARCHAR(10),
+    amount                      DECIMAL(12,2),
+    status                      VARCHAR(10) DEFAULT 'Pending',
+    idempotency_key             VARCHAR(40) UNIQUE,   -- stops duplicate requests
+    created_at                  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_txn_source
+        FOREIGN KEY (source_account_id) REFERENCES accounts(account_id),
+    CONSTRAINT fk_txn_destination
+        FOREIGN KEY (destination_account_id) REFERENCES accounts(account_id),
+    CONSTRAINT fk_txn_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id),
+    CONSTRAINT fk_txn_initiator
+        FOREIGN KEY (initiated_by_user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_txn_reviewer
+        FOREIGN KEY (reviewed_by_employee_id) REFERENCES employees(user_id),
+    CONSTRAINT fk_txn_reversal
+        FOREIGN KEY (reversal_of_transaction_id) REFERENCES transactions(transaction_id),
+    CONSTRAINT chk_txn_type   CHECK (type IN ('Deposit', 'Withdrawal', 'Transfer')),
+    CONSTRAINT chk_txn_amount CHECK (amount > 0),
+    CONSTRAINT chk_txn_status
+        CHECK (status IN ('Pending', 'Approved', 'Rejected', 'Success', 'Failed')),
+    -- each type must have the right accounts filled in (design decision 5)
+    CONSTRAINT chk_txn_accounts CHECK (
+           (type = 'Deposit'    AND source_account_id IS NULL     AND destination_account_id IS NOT NULL)
+        OR (type = 'Withdrawal' AND source_account_id IS NOT NULL AND destination_account_id IS NULL)
+        OR (type = 'Transfer'   AND source_account_id IS NOT NULL AND destination_account_id IS NOT NULL
+                                AND source_account_id <> destination_account_id)
+    )
+);
+
+-- ---------------------------------------------------------------------
+-- 9. loans : a loan requested by a customer, backed by one of their accounts
+-- ---------------------------------------------------------------------
+CREATE TABLE loans (
+    loan_id                      INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id                  INT NOT NULL,
+    linked_account_id            INT NOT NULL,
+    reviewed_by_employee_id      INT NULL,
+    disbursement_transaction_id  INT NULL,      -- NULL until paid out
+    principal                    DECIMAL(12,2),
+    interest_rate                DECIMAL(4,2) NOT NULL DEFAULT 10.50,
+    tenure_months                INT,
+    status                       VARCHAR(10) DEFAULT 'Requested',
+    requested_at                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_loans_customer
+        FOREIGN KEY (customer_id) REFERENCES customers(user_id),
+    CONSTRAINT fk_loans_account
+        FOREIGN KEY (linked_account_id) REFERENCES accounts(account_id),
+    CONSTRAINT fk_loans_reviewer
+        FOREIGN KEY (reviewed_by_employee_id) REFERENCES employees(user_id),
+    CONSTRAINT fk_loans_disbursement
+        FOREIGN KEY (disbursement_transaction_id) REFERENCES transactions(transaction_id),
+    CONSTRAINT chk_loans_principal CHECK (principal > 0),
+    CONSTRAINT chk_loans_tenure    CHECK (tenure_months > 0),
+    CONSTRAINT chk_loans_status    CHECK (status IN ('Requested', 'Rejected', 'Active', 'Closed'))
+);
+
+-- ---------------------------------------------------------------------
+-- 10. loan_installments : WEAK ENTITY
+--     It has no key of its own. It is identified by its owner (loan_id)
+--     plus a partial key (installment_no), and it is deleted with its loan.
+-- ---------------------------------------------------------------------
+CREATE TABLE loan_installments (
+    loan_id                 INT NOT NULL,
+    installment_no          INT NOT NULL,
+    due_date                DATE NOT NULL,
+    principal_part          DECIMAL(10,2) NOT NULL,
+    interest_part           DECIMAL(10,2) NOT NULL,
+    status                  VARCHAR(10) DEFAULT 'Pending',
+    payment_transaction_id  INT NULL,               -- NULL until paid
+    PRIMARY KEY (loan_id, installment_no),
+    CONSTRAINT fk_inst_loan
+        FOREIGN KEY (loan_id) REFERENCES loans(loan_id) ON DELETE CASCADE,
+    CONSTRAINT fk_inst_payment
+        FOREIGN KEY (payment_transaction_id) REFERENCES transactions(transaction_id),
+    CONSTRAINT chk_inst_status CHECK (status IN ('Pending', 'Paid', 'Overdue'))
+);
+
+-- ---------------------------------------------------------------------
+-- 11. audit_logs : who did what and when (append-only, written by triggers)
+-- ---------------------------------------------------------------------
+CREATE TABLE audit_logs (
+    log_id         INT AUTO_INCREMENT PRIMARY KEY,
+    actor_user_id  INT NOT NULL,
+    action         VARCHAR(30) NOT NULL,
+    table_name     VARCHAR(30),
+    record_id      VARCHAR(30),
+    old_value      VARCHAR(255),
+    new_value      VARCHAR(255),
+    logged_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_audit_actor
+        FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
+);
+
+-- ---------------------------------------------------------------------
+-- 12. notifications : an alert shown to a user
+-- ---------------------------------------------------------------------
+CREATE TABLE notifications (
+    notification_id  INT AUTO_INCREMENT PRIMARY KEY,
+    user_id          INT NOT NULL,
+    category         VARCHAR(20)  NOT NULL,
+    message          VARCHAR(255) NOT NULL,
+    transaction_id   INT NULL,
+    is_read          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notif_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_notif_txn
+        FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
+    CONSTRAINT chk_notif_category
+        CHECK (category IN ('KYC', 'Transaction', 'Loan', 'Budget', 'Security', 'General'))
+);
