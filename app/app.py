@@ -148,26 +148,74 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/password", methods=["GET", "POST"])
+# =====================================================================
+# PROFILE page (every role)
+# =====================================================================
+
+@app.route("/profile")
+@login_required()
+def profile():
+    uid = session["user_id"]
+    # LEFT JOINs: a user has a customers row OR an employees row OR neither (auditor).
+    me = query_one(
+        "SELECT u.user_id, u.name, u.email, u.phone, u.role, "
+        "       c.dob, c.address, c.kyc_status, "
+        "       e.designation, b.name AS branch_name, m.name AS manager_name "
+        "FROM users u "
+        "LEFT JOIN customers c ON c.user_id = u.user_id "
+        "LEFT JOIN employees e ON e.user_id = u.user_id "
+        "LEFT JOIN branches b  ON b.branch_id = e.branch_id "
+        "LEFT JOIN users m     ON m.user_id = e.manager_employee_id "
+        "WHERE u.user_id = %s",
+        (uid,),
+    )
+    return render_template("profile.html", me=me)
+
+
+@app.route("/profile", methods=["POST"])
+@login_required()
+def update_profile():
+    """Edit basic details. Email (the login ID) and date of birth (checked
+    during KYC) are shown but cannot be changed here."""
+    f = request.form
+    uid = session["user_id"]
+
+    # Customers have details in two tables -> one DB transaction for both UPDATEs.
+    db = get_db()
+    db.start_transaction()
+    try:
+        execute("UPDATE users SET name = %s, phone = %s WHERE user_id = %s",
+                (f["name"], f["phone"] or None, uid))
+        if session["role"] == "Customer":
+            execute("UPDATE customers SET address = %s WHERE user_id = %s",
+                    (f["address"] or None, uid))
+        db.commit()
+    except mysql.connector.Error:
+        db.rollback()
+        raise
+
+    session["name"] = f["name"]   # so the top bar shows the new name
+    flash("Profile updated.", "success")
+    return redirect(url_for("profile"))
+
+
+@app.route("/profile/password", methods=["POST"])
 @login_required()
 def change_password():
-    """Any user can change their password (e.g. a new employee replacing
-    the temporary password their manager gave them)."""
-    if request.method == "POST":
-        f = request.form
-        user = query_one("SELECT password_hash FROM users WHERE user_id = %s", (session["user_id"],))
-        if not check_password_hash(user["password_hash"], f["current"]):
-            flash("Current password is wrong.", "error")
-        elif f["new"] != f["confirm"]:
-            flash("The two new passwords do not match.", "error")
-        else:
-            execute(
-                "UPDATE users SET password_hash = %s WHERE user_id = %s",
-                (generate_password_hash(f["new"], method="pbkdf2:sha256"), session["user_id"]),
-            )
-            flash("Password changed.", "success")
-            return redirect(url_for("home"))
-    return render_template("password.html")
+    """Change password (e.g. a new employee replacing the temporary one)."""
+    f = request.form
+    user = query_one("SELECT password_hash FROM users WHERE user_id = %s", (session["user_id"],))
+    if not check_password_hash(user["password_hash"], f["current"]):
+        flash("Current password is wrong.", "error")
+    elif f["new"] != f["confirm"]:
+        flash("The two new passwords do not match.", "error")
+    else:
+        execute(
+            "UPDATE users SET password_hash = %s WHERE user_id = %s",
+            (generate_password_hash(f["new"], method="pbkdf2:sha256"), session["user_id"]),
+        )
+        flash("Password changed.", "success")
+    return redirect(url_for("profile"))
 
 
 # =====================================================================

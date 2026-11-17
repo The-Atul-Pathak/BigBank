@@ -92,7 +92,7 @@ Every sample user's password is `password123`.
    3 (due 2026-11-05) becomes Overdue.
 8. **Onboarding.** As Arjun, open *My branch* and add an employee. A temporary password is
    shown once. Log in as the new employee: they see only Dwarka's data and can change
-   their password with the *Password* link.
+   their name, phone and password on the *Profile* page.
 9. **Audit.** Log in as Kiran. Every action above is in the audit log, with who did it
    and the old and new values.
 

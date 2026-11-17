@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<h1>My profile</h1>
+
+<div class="grid">
+  <!-- Basic details -->
+  <form method="post" action="{{ url_for('update_profile') }}" class="card">
+    <h2>Details</h2>
+    <label>Full name <input name="name" value="{{ me.name }}" required maxlength="60"></label>
+    <label>Phone <input name="phone" value="{{ me.phone or '' }}" maxlength="15"></label>
+    {% if me.role == 'Customer' %}
+      <label>Address <input name="address" value="{{ me.address or '' }}" maxlength="150"></label>
+    {% endif %}
+    <button>Save details</button>
+
+    <p class="muted" style="margin-top:16px">
+      Login email: <strong>{{ me.email }}</strong> (cannot be changed, it is your login ID)<br>
+      Role: {{ me.role }}<br>
+      {% if me.role == 'Customer' %}
+        Date of birth: {{ me.dob }} (verified by KYC)<br>
+        KYC status: <span class="badge {{ me.kyc_status }}">{{ me.kyc_status }}</span>
+      {% elif me.branch_name %}
+        Branch: {{ me.branch_name }}<br>
+        Designation: {{ me.designation }}<br>
+        Reports to: {{ me.manager_name or '-' }}
+      {% endif %}
+    </p>
+  </form>
+
+  <!-- Password -->
+  <form method="post" action="{{ url_for('change_password') }}" class="card">
+    <h2>Change password</h2>
+    <label>Current password <input type="password" name="current" required></label>
+    <label>New password <input type="password" name="new" required minlength="6"></label>
+    <label>New password again <input type="password" name="confirm" required minlength="6"></label>
+    <button>Change password</button>
+  </form>
+</div>
+{% endblock %}
