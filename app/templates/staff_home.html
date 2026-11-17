@@ -1,81 +1,99 @@
 {% extends "base.html" %}
+{% from "_ui.html" import tile, card_header %}
 {% block title %}Work queue{% endblock %}
+{% block sub %}Everything waiting for a decision{% endblock %}
 {% block content %}
-<h1>Work queue</h1>
-
-<h2>KYC waiting for review ({{ pending_kyc | length }})</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>KYC</th><th>Customer</th><th>Document</th><th>Submitted</th><th>Decision</th></tr>
-  {% for k in pending_kyc %}
-  <tr>
-    <td>{{ k.kyc_id }}</td>
-    <td>{{ k.name }} (#{{ k.customer_id }})</td>
-    <td>{{ k.doc_type }}: {{ k.doc_ref }}</td>
-    <td>{{ k.submitted_at }}</td>
-    <td>
-      <form method="post" action="{{ url_for('review_kyc', kyc_id=k.kyc_id) }}" class="inline">
-        <input name="remarks" placeholder="Remarks" maxlength="200">
-        <button name="decision" value="Approved" class="small">Approve</button>
-        <button name="decision" value="NeedsCorrection" class="small secondary">Needs correction</button>
-        <button name="decision" value="Rejected" class="small danger">Reject</button>
-      </form>
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="5" class="empty">Nothing waiting.</td></tr>
-  {% endfor %}
-</table>
+<div class="tiles">
+  {{ tile('teal', pending_kyc | length, 'KYC to review', 'user', '#kyc', 'Review KYC') }}
+  {{ tile('green', pending_txns | length, 'Deposits and withdrawals', 'cash', '#cash', 'Review requests') }}
+  {{ tile('amber', pending_loans | length, 'Loan applications', 'file', '#loans', 'Review loans') }}
 </div>
 
-<h2>Deposits and withdrawals waiting for approval ({{ pending_txns | length }})</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>ID</th><th>Customer</th><th>Type</th><th>Account</th><th class="num">Amount</th><th>Requested</th><th>Decision</th></tr>
-  {% for t in pending_txns %}
-  <tr>
-    <td>{{ t.transaction_id }}</td>
-    <td>{{ t.name }}</td>
-    <td>{{ t.type }}</td>
-    <td>{{ t.source_account_id or t.destination_account_id }}</td>
-    <td class="num">{{ t.amount | money }}</td>
-    <td>{{ t.created_at }}</td>
-    <td>
-      <form method="post" action="{{ url_for('review_transaction', txn_id=t.transaction_id) }}" class="inline">
-        <button name="decision" value="Approve" class="small">Approve</button>
-        <button name="decision" value="Reject" class="small danger">Reject</button>
-      </form>
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="7" class="empty">Nothing waiting.</td></tr>
-  {% endfor %}
-</table>
+<div class="card" id="kyc">
+  {% call card_header('KYC waiting for review', 'shield', 'blue') %}
+    <span class="badge info">{{ pending_kyc | length }} waiting</span>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>KYC</th><th>Customer</th><th>Document</th><th>Submitted</th><th>Decision</th></tr>
+    {% for k in pending_kyc %}
+    <tr>
+      <td class="strong">{{ k.kyc_id }}</td>
+      <td><span class="strong">{{ k.name }}</span><br><span class="small muted">Customer #{{ k.customer_id }}</span></td>
+      <td>{{ k.doc_type }} · {{ k.doc_ref }}</td>
+      <td>{{ k.submitted_at | when }}</td>
+      <td>
+        <form method="post" action="{{ url_for('review_kyc', kyc_id=k.kyc_id) }}" class="actions">
+          <input name="remarks" placeholder="Remarks (optional)" maxlength="200">
+          <button name="decision" value="Approved" class="btn sm success">{{ icon('ok') }} Approve</button>
+          <button name="decision" value="NeedsCorrection" class="btn sm light">Needs correction</button>
+          <button name="decision" value="Rejected" class="btn sm danger">{{ icon('x') }} Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">All caught up. No KYC waiting.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 
-<h2>Loan applications ({{ pending_loans | length }})</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Loan</th><th>Customer</th><th>Account</th><th class="num">Amount</th><th>Rate</th><th>Months</th><th>Requested</th><th>Decision</th></tr>
-  {% for l in pending_loans %}
-  <tr>
-    <td>{{ l.loan_id }}</td>
-    <td>{{ l.customer_name }}</td>
-    <td>{{ l.linked_account_id }}</td>
-    <td class="num">{{ l.principal | money }}</td>
-    <td>{{ l.interest_rate }}%</td>
-    <td>{{ l.tenure_months }}</td>
-    <td>{{ l.requested_at }}</td>
-    <td>
-      <form method="post" action="{{ url_for('review_loan', loan_id=l.loan_id) }}" class="inline">
-        <button name="decision" value="Approve" class="small">Approve &amp; pay out</button>
-        <button name="decision" value="Reject" class="small danger">Reject</button>
-      </form>
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="8" class="empty">Nothing waiting.</td></tr>
-  {% endfor %}
-</table>
+<div class="card" id="cash">
+  {% call card_header('Deposits and withdrawals waiting for approval', 'cash', 'green') %}
+    <span class="badge info">{{ pending_txns | length }} waiting</span>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>ID</th><th>Customer</th><th>Type</th><th>Account</th><th class="num">Amount</th><th>Requested</th><th>Decision</th></tr>
+    {% for t in pending_txns %}
+    <tr>
+      <td class="strong">{{ t.transaction_id }}</td>
+      <td class="strong">{{ t.name }}</td>
+      <td>{{ t.type }}</td>
+      <td>{{ t.source_account_id or t.destination_account_id }}</td>
+      <td class="num strong">{{ t.amount | money }}</td>
+      <td>{{ t.created_at | when }}</td>
+      <td>
+        <form method="post" action="{{ url_for('review_transaction', txn_id=t.transaction_id) }}" class="actions">
+          <button name="decision" value="Approve" class="btn sm success">{{ icon('ok') }} Approve</button>
+          <button name="decision" value="Reject" class="btn sm danger">{{ icon('x') }} Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="empty">All caught up. No requests waiting.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<div class="card" id="loans">
+  {% call card_header('Loan applications', 'file', 'amber') %}
+    <span class="badge info">{{ pending_loans | length }} waiting</span>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Loan</th><th>Customer</th><th>Account</th><th class="num">Amount</th><th>Rate</th><th>Months</th><th>Requested</th><th>Decision</th></tr>
+    {% for l in pending_loans %}
+    <tr>
+      <td class="strong">{{ l.loan_id }}</td>
+      <td class="strong">{{ l.customer_name }}</td>
+      <td>{{ l.linked_account_id }}</td>
+      <td class="num strong">{{ l.principal | money }}</td>
+      <td>{{ l.interest_rate }}%</td>
+      <td>{{ l.tenure_months }}</td>
+      <td>{{ l.requested_at | when }}</td>
+      <td>
+        <form method="post" action="{{ url_for('review_loan', loan_id=l.loan_id) }}" class="actions">
+          <button name="decision" value="Approve" class="btn sm success">{{ icon('ok') }} Approve &amp; pay out</button>
+          <button name="decision" value="Reject" class="btn sm danger">{{ icon('x') }} Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="empty">All caught up. No loan applications waiting.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 {% endblock %}

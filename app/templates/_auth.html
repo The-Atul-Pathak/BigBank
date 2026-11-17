@@ -1,0 +1,37 @@
+{# Layout for the logged-out pages (login, register): dark welcome panel + form. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}{% endblock %} · BigBank</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="auth">
+  <div class="hero">
+    <div class="logo">{{ icon('building') }} <span><b>BigBank</b> | Banking</span></div>
+    <div>
+      <h2>Banking that keeps its rules in the database.</h2>
+      <p>Accounts, transfers, loans and KYC, with every check enforced by MySQL triggers and procedures.</p>
+      <ul>
+        <li>{{ icon('ok') }} Instant, all-or-nothing transfers between accounts</li>
+        <li>{{ icon('ok') }} Loans with monthly EMIs and overdue tracking</li>
+        <li>{{ icon('ok') }} Staff work queue and branch reports</li>
+      </ul>
+    </div>
+    <div class="small" style="color:#8a939c">DBMS Lab project · COCSC302</div>
+  </div>
+
+  <div class="panel">
+    <div class="box">
+      {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="alert {{ 'green' if category == 'success' else 'red' }}">
+          {{ icon('check' if category == 'success' else 'alert') }}<div>{{ message }}</div></div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+</body>
+</html>

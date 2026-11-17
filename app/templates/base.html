@@ -2,48 +2,82 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}BigBank{% endblock %} · BigBank</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('home') }}">BigBank</a>
-    {% if session.user_id %}
-      <nav>
-        {% if session.role == 'Customer' %}
-          <a href="{{ url_for('customer_home') }}">Dashboard</a>
-          <a href="{{ url_for('money_page') }}">Move money</a>
-          <a href="{{ url_for('open_account') }}">Open account</a>
-          <a href="{{ url_for('my_loans') }}">Loans</a>
-        {% elif session.role in ('Employee', 'BranchManager') %}
-          <a href="{{ url_for('staff_home') }}">Work queue</a>
-          <a href="{{ url_for('staff_accounts') }}">Accounts</a>
-          <a href="{{ url_for('staff_transactions') }}">Transactions</a>
-          <a href="{{ url_for('staff_loans') }}">Loans</a>
-          {% if session.role == 'BranchManager' %}
-            <a href="{{ url_for('branch_summary') }}">My branch</a>
-          {% endif %}
-        {% elif session.role == 'Auditor' %}
-          <a href="{{ url_for('audit_log') }}">Audit log</a>
-        {% endif %}
-      </nav>
-      <div class="who">
-        <a href="{{ url_for('profile') }}">{{ session.name }}</a> <span class="badge">{{ session.role }}</span>
-        <a href="{{ url_for('profile') }}">Profile</a>
-        <a href="{{ url_for('logout') }}">Log out</a>
-      </div>
-    {% endif %}
-  </header>
 
-  <main>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="flash flash-{{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endwith %}
+{# One sidebar link. It is highlighted on its own page and on the pages listed in `also`. #}
+{% macro link(endpoint, icon_name, label, also=()) %}
+  <a href="{{ url_for(endpoint) }}" class="{{ 'active' if request.endpoint == endpoint or request.endpoint in also }}">
+    {{ icon(icon_name) }} {{ label }}</a>
+{% endmacro %}
+
+{% if session.user_id %}
+<aside class="sidebar">
+  <div class="brand">
+    <b>BigBank</b> |
+    {{ 'Banking' if session.role == 'Customer' else 'Audit' if session.role == 'Auditor' else 'Staff' }}
+  </div>
+  <div class="user">
+    <div class="avatar">{{ session.name | initials }}</div>
+    <div><b>{{ session.name }}</b>{{ session.role | words }}</div>
+  </div>
+  <nav>
+    {% if session.role == 'Customer' %}
+      {{ link('customer_home', 'grid', 'Dashboard', also=['account_detail']) }}
+      {{ link('money_page', 'repeat', 'Move money') }}
+      {{ link('open_account', 'plus', 'Open account') }}
+      {{ link('my_loans', 'file', 'Loans', also=['loan_detail']) }}
+    {% elif session.role in ('Employee', 'BranchManager') %}
+      {{ link('staff_home', 'inbox', 'Work queue') }}
+      {{ link('staff_accounts', 'card', 'Accounts') }}
+      {{ link('staff_transactions', 'list', 'Transactions') }}
+      {{ link('staff_loans', 'file', 'Loans') }}
+      {% if session.role == 'BranchManager' %}
+        {{ link('branch_summary', 'building', 'My branch', also=['add_employee']) }}
+      {% endif %}
+    {% elif session.role == 'Auditor' %}
+      {{ link('audit_log', 'shield', 'Audit log') }}
+    {% endif %}
+    <div class="section">Account</div>
+    {{ link('profile', 'user', 'My profile') }}
+    {{ link('logout', 'logout', 'Log out') }}
+  </nav>
+</aside>
+{% endif %}
+
+<div class="main {{ '' if session.user_id else 'full' }}">
+  {% if session.user_id %}
+  <header class="topbar">
+    <div class="spacer"></div>
+    {% if session.role == 'Customer' %}
+      {% set unread = unread_count() %}
+      <a class="icon-btn" href="{{ url_for('customer_home') }}#notifications" title="Notifications">
+        {{ icon('bell') }}{% if unread %}<span class="count">{{ unread }}</span>{% endif %}</a>
+    {% endif %}
+    <a class="who" href="{{ url_for('profile') }}">
+      <div class="avatar">{{ session.name | initials }}</div><span>{{ session.name }}</span></a>
+  </header>
+  {% endif %}
+
+  <div class="page-header">
+    <div>
+      <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
+      <div class="sub">{% block sub %}{% endblock %}</div>
+    </div>
+    <div class="breadcrumb"><a href="{{ url_for('home') }}">Home</a> &nbsp;/&nbsp; {{ self.title() }}</div>
+  </div>
+
+  <main class="content">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <div class="alert {{ 'green' if category == 'success' else 'red' }}">
+        {{ icon('check' if category == 'success' else 'alert') }}<div>{{ message }}</div></div>
+    {% endfor %}
 
     {% block content %}{% endblock %}
   </main>
+</div>
 </body>
 </html>

@@ -1,17 +1,21 @@
-{% extends "base.html" %}
+{% extends "_auth.html" %}
 {% block title %}Register{% endblock %}
 {% block content %}
-<div class="narrow">
-  <h1>Create a customer account</h1>
-  <form method="post" class="card">
-    <label>Full name <input name="name" required maxlength="60"></label>
-    <label>Email <input type="email" name="email" required maxlength="80"></label>
-    <label>Phone <input name="phone" maxlength="15"></label>
-    <label>Date of birth <input type="date" name="dob" required></label>
-    <label>Address <input name="address" maxlength="150"></label>
-    <label>Password <input type="password" name="password" required minlength="6"></label>
-    <button>Register</button>
-  </form>
-  <p>Already registered? <a href="{{ url_for('login') }}">Log in</a></p>
-</div>
+<h1>Create a customer account</h1>
+<p class="muted" style="margin:0 0 24px">After signing up, submit your KYC to open an account.</p>
+
+<form method="post" class="card">
+  <div class="card-body">
+    <label class="field">Full name <input name="name" required maxlength="60"></label>
+    <label class="field">Email <input type="email" name="email" required maxlength="80"></label>
+    <div class="form-grid">
+      <label class="field">Phone <input name="phone" maxlength="15"></label>
+      <label class="field">Date of birth <input type="date" name="dob" required></label>
+    </div>
+    <label class="field">Address <input name="address" maxlength="150"></label>
+    <label class="field">Password <input type="password" name="password" required minlength="6"></label>
+    <button class="btn block">Register</button>
+  </div>
+  <div class="card-footer small">Already registered? <a href="{{ url_for('login') }}">Log in</a></div>
+</form>
 {% endblock %}

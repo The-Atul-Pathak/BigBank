@@ -1,9 +1,11 @@
 {# Repay buttons for one active loan `l` (a row of v_loan_summary).
    Used on the dashboard, the My loans page and the loan detail page. #}
-<form method="post" class="inline"
-      action="{{ url_for('pay_installment', loan_id=l.loan_id, installment_no=l.next_installment_no) }}">
-  <button class="small">Pay next EMI</button>
-</form>
-<form method="post" class="inline" action="{{ url_for('repay_loan', loan_id=l.loan_id) }}">
-  <button class="small secondary">Repay full loan ({{ l.amount_to_close | money }})</button>
-</form>
+<div class="actions">
+  <form method="post" class="inline"
+        action="{{ url_for('pay_installment', loan_id=l.loan_id, installment_no=l.next_installment_no) }}">
+    <button class="btn sm success">{{ icon('ok') }} Pay next EMI</button>
+  </form>
+  <form method="post" class="inline" action="{{ url_for('repay_loan', loan_id=l.loan_id) }}">
+    <button class="btn sm light">Repay all ({{ l.amount_to_close | money }})</button>
+  </form>
+</div>

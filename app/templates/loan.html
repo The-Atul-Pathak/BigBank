@@ -1,45 +1,52 @@
 {% extends "base.html" %}
+{% from "_ui.html" import tile, badge, card_header %}
 {% block title %}Loan {{ loan.loan_id }}{% endblock %}
+{% block heading %}Loan {{ loan.loan_id }} {{ badge(loan.status) }}{% endblock %}
+{% block sub %}Borrowed {{ loan.principal | money }} at {{ loan.interest_rate }}% for {{ loan.tenure_months }} months.
+  Installments are paid from account {{ loan.linked_account_id }}.{% endblock %}
 {% block content %}
-<h1>Loan {{ loan.loan_id }} <span class="badge {{ loan.status }}">{{ loan.status }}</span></h1>
-
-<div class="card">
-  <p class="stat">{{ loan.outstanding_balance | money }} <span class="muted">principal still to repay</span></p>
-  <p class="muted">
-    Borrowed {{ loan.principal | money }} at {{ loan.interest_rate }}% for {{ loan.tenure_months }} months.
-    Installments are paid from account {{ loan.linked_account_id }}.
-  </p>
-  {% if loan.status == 'Active' %}
-    {% with l = loan %}{% include "_repay_buttons.html" %}{% endwith %}
-  {% endif %}
+<div class="tiles">
+  {{ tile('amber', loan.outstanding_balance | money0, 'Principal still to repay', 'file', '#schedule', 'View schedule') }}
+  {{ tile('teal', loan.amount_to_close | money0, 'Amount to close the loan', 'wallet', '#schedule', 'View schedule',
+          'principal + remaining interest') }}
+  {{ tile('green', loan.installments_paid ~ ' / ' ~ loan.tenure_months, 'Installments paid', 'check',
+          '#schedule', 'View schedule') }}
+  {{ tile('slate', loan.next_due_date | when, 'Next due date', 'calendar', '#schedule', 'View schedule') }}
 </div>
 
-<h2>Repayment schedule</h2>
-{% if not installments %}
-  <p class="empty">The schedule is created when an employee approves the loan.</p>
-{% else %}
-<div class="table-wrap">
-<table>
-  <tr><th>#</th><th>Due date</th><th class="num">Principal</th><th class="num">Interest</th>
-      <th class="num">EMI</th><th>Status</th><th></th></tr>
-  {% for i in installments %}
-  <tr>
-    <td>{{ i.installment_no }}</td>
-    <td>{{ i.due_date }}</td>
-    <td class="num">{{ i.principal_part | money }}</td>
-    <td class="num">{{ i.interest_part | money }}</td>
-    <td class="num">{{ i.emi | money }}</td>
-    <td><span class="badge {{ i.status }}">{{ i.status }}</span></td>
-    <td>
-      {% if i.status != 'Paid' and loan.status == 'Active' %}
-      <form method="post" action="{{ url_for('pay_installment', loan_id=loan.loan_id, installment_no=i.installment_no) }}" class="inline">
-        <button class="small">Pay</button>
-      </form>
-      {% endif %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+{% if loan.status == 'Active' %}
+<div class="card">
+  {{ card_header('Repay', 'cash', 'green') }}
+  <div class="card-body">{% with l = loan %}{% include "_repay_buttons.html" %}{% endwith %}</div>
 </div>
 {% endif %}
+
+<div class="card" id="schedule">
+  {{ card_header('Repayment schedule', 'calendar') }}
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>Due date</th><th class="num">Principal</th><th class="num">Interest</th>
+        <th class="num">EMI</th><th>Status</th><th></th></tr>
+    {% for i in installments %}
+    <tr>
+      <td class="strong">{{ i.installment_no }}</td>
+      <td>{{ i.due_date | when }}</td>
+      <td class="num">{{ i.principal_part | money }}</td>
+      <td class="num">{{ i.interest_part | money }}</td>
+      <td class="num strong">{{ i.emi | money }}</td>
+      <td>{{ badge(i.status) }}</td>
+      <td>
+        {% if i.status != 'Paid' and loan.status == 'Active' %}
+        <form method="post" action="{{ url_for('pay_installment', loan_id=loan.loan_id, installment_no=i.installment_no) }}" class="inline">
+          <button class="btn sm light">Pay</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="empty">The schedule is created when an employee approves the loan.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
 {% endblock %}

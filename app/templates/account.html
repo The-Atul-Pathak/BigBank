@@ -1,60 +1,60 @@
 {% extends "base.html" %}
+{% from "_ui.html" import tile, badge, card_header %}
 {% block title %}Account {{ account.account_id }}{% endblock %}
+{% block heading %}Account {{ account.account_id }} {{ badge(account.status) }}{% endblock %}
+{% block sub %}{{ account.account_type }} account at {{ account.branch_name }}{% endblock %}
 {% block content %}
-<h1>Account {{ account.account_id }} <span class="badge {{ account.status }}">{{ account.status }}</span></h1>
-
-<div class="grid">
-  <div class="card">
-    <h2>Summary</h2>
-    <p class="stat">{{ account.balance | money }}</p>
-    <p class="muted">
-      {{ account.account_type }} at {{ account.branch_name }}, {{ account.interest_rate }}% interest<br>
-      Minimum balance: {{ account.min_balance | money }}<br>
-      Spent this month: {{ account.spent_this_month | money }}<br>
-      {% if account.spending_budget is not none %}
-        Budget left this month: {{ account.budget_remaining | money }}
-      {% else %}
-        No monthly budget set
-      {% endif %}
-    </p>
-  </div>
-
-  <div class="card">
-    <h2>Limits</h2>
-    <form method="post" action="{{ url_for('account_settings', account_id=account.account_id) }}">
-      <label>Daily limit
-        <input type="number" name="daily_limit" min="1" step="0.01" value="{{ account.daily_limit }}" required>
-      </label>
-      <label>Monthly spending budget (leave empty for none)
-        <input type="number" name="spending_budget" min="0" step="0.01"
-               value="{{ account.spending_budget if account.spending_budget is not none }}">
-      </label>
-      <button>Save</button>
-    </form>
-  </div>
+<div class="tiles">
+  {{ tile('teal', account.balance | money0, 'Balance', 'wallet', '#statement', 'View statement',
+          'Minimum balance ' ~ account.min_balance | money) }}
+  {{ tile('amber', account.spent_this_month | money0, 'Spent this month', 'trend', '#statement', 'View statement') }}
+  {{ tile('green', account.budget_remaining | money0 if account.spending_budget is not none else 'No budget',
+          'Budget left this month', 'gauge', '#limits', 'Change budget') }}
+  {{ tile('slate', account.daily_limit | money0, 'Daily limit', 'calendar', '#limits', 'Change limit',
+          account.interest_rate ~ '% interest') }}
 </div>
 
-<h2>Statement</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>ID</th><th>Date</th><th>Type</th><th>Details</th><th class="num">Amount</th><th>Status</th></tr>
-  {% for t in statement %}
-  <tr>
-    <td>{{ t.transaction_id }}</td>
-    <td>{{ t.created_at }}</td>
-    <td>{{ t.type }}</td>
-    <td>
-      {% if t.type == 'Transfer' %}
-        {% if t.direction == 'Credit' %}from {{ t.source_account_id }}{% else %}to {{ t.destination_account_id }}{% endif %}
-      {% endif %}
-      {% if t.reversal_of_transaction_id %}reversal of #{{ t.reversal_of_transaction_id }}{% endif %}
-    </td>
-    <td class="num">{{ '+' if t.direction == 'Credit' else '-' }} {{ t.amount | money }}</td>
-    <td><span class="badge {{ t.status }}">{{ t.status }}</span></td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="empty">No transactions yet.</td></tr>
-  {% endfor %}
-</table>
+<div class="row wide-right">
+  <form method="post" action="{{ url_for('account_settings', account_id=account.account_id) }}" class="card" id="limits">
+    {{ card_header('Limits', 'gauge', 'amber') }}
+    <div class="card-body">
+      <label class="field">Daily limit (Rs)
+        <input type="number" name="daily_limit" min="1" step="0.01" value="{{ account.daily_limit }}" required>
+      </label>
+      <label class="field">Monthly spending budget (Rs)
+        <input type="number" name="spending_budget" min="0" step="0.01"
+               value="{{ account.spending_budget if account.spending_budget is not none }}">
+        <span class="help">Leave empty for no budget.</span>
+      </label>
+      <button class="btn">Save limits</button>
+    </div>
+  </form>
+
+  <div class="card" id="statement">
+    {{ card_header('Statement', 'list') }}
+    <div class="table-wrap">
+    <table>
+      <tr><th>ID</th><th>Date</th><th>Type</th><th>Details</th><th class="num">Amount</th><th>Status</th></tr>
+      {% for t in statement %}
+      <tr>
+        <td class="strong">{{ t.transaction_id }}</td>
+        <td>{{ t.created_at | when }}</td>
+        <td>{{ t.type }}</td>
+        <td class="muted">
+          {% if t.type == 'Transfer' %}
+            {% if t.direction == 'Credit' %}from {{ t.source_account_id }}{% else %}to {{ t.destination_account_id }}{% endif %}
+          {% endif %}
+          {% if t.reversal_of_transaction_id %}reversal of #{{ t.reversal_of_transaction_id }}{% endif %}
+        </td>
+        <td class="num strong" style="color: var(--{{ 'ok' if t.direction == 'Credit' else 'text' }})">
+          {{ '+' if t.direction == 'Credit' else '-' }} {{ t.amount | money }}</td>
+        <td>{{ badge(t.status) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No transactions yet.</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
 </div>
 {% endblock %}

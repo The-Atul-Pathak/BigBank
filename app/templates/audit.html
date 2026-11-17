@@ -1,35 +1,37 @@
 {% extends "base.html" %}
+{% from "_ui.html" import card_header %}
 {% block title %}Audit log{% endblock %}
+{% block sub %}Written automatically by database triggers. Nobody can edit or delete these rows.{% endblock %}
 {% block content %}
-<h1>Audit log</h1>
-<p class="muted">Written automatically by database triggers. Nobody can edit or delete these rows.</p>
-
-<form method="get" class="inline" style="display:block;margin-bottom:12px">
-  <select name="table" style="display:inline-block;width:auto">
-    <option value="">All tables</option>
-    {% for t in ['customers', 'accounts', 'transactions', 'loans'] %}
-      <option value="{{ t }}" {{ 'selected' if t == table }}>{{ t }}</option>
+<div class="card">
+  {% call card_header('Audit log', 'shield') %}
+    <form method="get" class="actions">
+      <select name="table">
+        <option value="">All tables</option>
+        {% for t in ['customers', 'accounts', 'transactions', 'loans'] %}
+          <option value="{{ t }}" {{ 'selected' if t == table }}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn sm light">{{ icon('filter') }} Filter</button>
+    </form>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>#</th><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th><th>Change</th></tr>
+    {% for l in logs %}
+    <tr>
+      <td class="strong">{{ l.log_id }}</td>
+      <td>{{ l.logged_at | when }}</td>
+      <td><span class="strong">{{ l.actor_name }}</span> <span class="muted">({{ l.actor_role | words }})</span></td>
+      <td><span class="badge info">{{ l.action }}</span></td>
+      <td>{{ l.table_name }}</td>
+      <td>{{ l.record_id }}</td>
+      <td>{{ l.old_value }} &rarr; {{ l.new_value }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="empty">No entries.</td></tr>
     {% endfor %}
-  </select>
-  <button class="small">Filter</button>
-</form>
-
-<div class="table-wrap">
-<table>
-  <tr><th>#</th><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th><th>Change</th></tr>
-  {% for l in logs %}
-  <tr>
-    <td>{{ l.log_id }}</td>
-    <td>{{ l.logged_at }}</td>
-    <td>{{ l.actor_name }} <span class="muted">({{ l.actor_role }})</span></td>
-    <td>{{ l.action }}</td>
-    <td>{{ l.table_name }}</td>
-    <td>{{ l.record_id }}</td>
-    <td>{{ l.old_value }} &rarr; {{ l.new_value }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="7" class="empty">No entries.</td></tr>
-  {% endfor %}
-</table>
+  </table>
+  </div>
 </div>
 {% endblock %}

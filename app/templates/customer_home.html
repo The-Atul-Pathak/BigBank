@@ -1,96 +1,134 @@
 {% extends "base.html" %}
+{% from "_ui.html" import tile, badge, card_header %}
 {% block title %}Dashboard{% endblock %}
+{% block sub %}Welcome back, {{ session.name.split()[0] }}{% endblock %}
 {% block content %}
-<h1>Hello, {{ session.name }}</h1>
+{% set active_accounts = accounts | selectattr('status', 'equalto', 'Active') | list %}
+{% set active_loans = loans | selectattr('status', 'equalto', 'Active') | list %}
+{% set overdue_loans = overdue | map(attribute='loan_id') | list %}
+{% set kyc_color = {'Approved': 'green', 'Pending': 'amber'}.get(customer.kyc_status, 'red') %}
 
-<div class="grid">
-  <!-- KYC -->
-  <div class="card">
-    <h2>KYC status: <span class="badge {{ customer.kyc_status }}">{{ customer.kyc_status }}</span></h2>
+<div class="tiles">
+  {{ tile('teal', active_accounts | sum(attribute='balance') | money0, 'Total balance', 'wallet',
+          '#accounts', 'View accounts', active_accounts | length ~ ' active account(s)') }}
+  {{ tile(kyc_color, customer.kyc_status | words, 'KYC status', 'shield',
+          url_for('profile') if customer.kyc_status == 'Approved' else '#kyc',
+          'View profile' if customer.kyc_status == 'Approved' else 'Go to KYC',
+          latest_kyc.doc_type ~ ' · ' ~ latest_kyc.doc_ref if latest_kyc else 'No document yet') }}
+  {{ tile('amber', active_loans | sum(attribute='outstanding_balance') | money0, 'Loan outstanding', 'file',
+          url_for('my_loans'), 'View loans', active_loans | length ~ ' active loan(s)') }}
+  {{ tile('red' if overdue else 'green', overdue | length, 'Overdue installments', 'alert',
+          url_for('my_loans'), 'View loans',
+          (overdue | sum(attribute='emi') | money) ~ ' due' if overdue else 'All payments on time') }}
+</div>
+
+{% if customer.kyc_status != 'Approved' %}
+<div class="card" id="kyc">
+  {{ card_header('KYC verification', 'shield', 'amber') }}
+  <div class="card-body">
     {% if latest_kyc %}
-      <p class="muted">Last document: {{ latest_kyc.doc_type }} ({{ latest_kyc.doc_ref }}),
-        <span class="badge {{ latest_kyc.status }}">{{ latest_kyc.status }}</span>
-        {% if latest_kyc.remarks %}<br>Remarks: {{ latest_kyc.remarks }}{% endif %}</p>
+      <p>Last document: {{ latest_kyc.doc_type }} ({{ latest_kyc.doc_ref }}) {{ badge(latest_kyc.status) }}
+        {% if latest_kyc.remarks %}<br><span class="muted">Remarks: {{ latest_kyc.remarks }}</span>{% endif %}</p>
     {% endif %}
 
-    {% if customer.kyc_status != 'Approved' and (not latest_kyc or latest_kyc.status in ('Rejected', 'NeedsCorrection')) %}
+    {% if not latest_kyc or latest_kyc.status in ('Rejected', 'NeedsCorrection') %}
       <form method="post" action="{{ url_for('submit_kyc') }}">
-        <label>Document type
-          <select name="doc_type">
-            <option>Aadhaar</option><option>PAN</option><option>Passport</option><option>Voter ID</option>
-          </select>
-        </label>
-        <label>Document number <input name="doc_ref" required maxlength="30"></label>
-        <button>Submit KYC</button>
+        <div class="form-grid">
+          <label class="field">Document type
+            <select name="doc_type">
+              <option>Aadhaar</option><option>PAN</option><option>Passport</option><option>Voter ID</option>
+            </select>
+          </label>
+          <label class="field">Document number <input name="doc_ref" required maxlength="30"></label>
+        </div>
+        <button class="btn">{{ icon('send') }} Submit KYC</button>
       </form>
-    {% elif customer.kyc_status != 'Approved' %}
+    {% else %}
       <p>Your document is waiting for an employee to review it. You can open an account after it is approved.</p>
-    {% else %}
-      <p>You can open accounts and apply for loans.</p>
     {% endif %}
   </div>
+</div>
+{% endif %}
 
-  <!-- Notifications -->
-  <div class="card">
-    <h2>Notifications</h2>
-    {% for n in notifications %}
-      <p class="{{ 'unread' if not n.is_read }}">
-        <span class="badge">{{ n.category }}</span> {{ n.message }}<br>
-        <span class="muted">{{ n.created_at }}</span>
-      </p>
+<div class="row wide-left">
+  <div class="card" id="accounts">
+    {% call card_header('My accounts', 'card') %}
+      <a class="btn sm light" href="{{ url_for('open_account') }}">{{ icon('plus') }} Open account</a>
+    {% endcall %}
+    <div class="table-wrap">
+    <table>
+      <tr><th>Account</th><th>Type</th><th>Branch</th><th class="num">Balance</th>
+          <th class="num">Spent this month</th><th class="num">Budget left</th><th>Status</th></tr>
+      {% for a in accounts %}
+      <tr>
+        <td><a class="strong" href="{{ url_for('account_detail', account_id=a.account_id) }}">{{ a.account_id }}</a></td>
+        <td>{{ a.account_type }}</td>
+        <td>{{ a.branch_name }}</td>
+        <td class="num strong">{{ a.balance | money }}</td>
+        <td class="num">{{ a.spent_this_month | money }}</td>
+        <td class="num">{{ a.budget_remaining | money if a.budget_remaining is not none else '-' }}</td>
+        <td>{{ badge(a.status) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">No accounts yet.
+        {% if customer.kyc_status == 'Approved' %}<a href="{{ url_for('open_account') }}">Open one</a>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  {% set unread = notifications | rejectattr('is_read') | list | length %}
+  <div class="card" id="notifications">
+    {% call card_header('Notifications', 'bell', 'amber') %}
+      {% if unread %}<span class="badge info">{{ unread }} new</span>{% endif %}
+    {% endcall %}
+    {% set look = {'KYC': ('shield', 'green'), 'Loan': ('file', 'amber'), 'Transaction': ('send', 'blue'),
+                   'Budget': ('wallet', 'amber'), 'Security': ('lock', 'red')} %}
+    <ul class="feed">
+      {% for n in notifications %}
+        {% set ico, color = look.get(n.category, ('bell', 'blue')) %}
+        <li>
+          <div class="ico {{ color }}">{{ icon(ico) }}</div>
+          <div>
+            <div class="{{ 'unread' if not n.is_read }}">{{ n.message }}</div>
+            <div class="time">{{ n.created_at | when }}</div>
+          </div>
+        </li>
+      {% else %}
+        <li class="muted">No notifications.</li>
+      {% endfor %}
+    </ul>
+    {% if unread %}
+    <form method="post" action="{{ url_for('mark_notifications_read') }}" class="card-footer">
+      <button class="btn sm light">Mark all as read</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  {% call card_header('My loans', 'file', 'green') %}
+    <a class="btn sm light" href="{{ url_for('my_loans') }}">Apply for a loan</a>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Loan</th><th class="num">Principal</th><th class="num">Outstanding</th><th>Next due</th><th>Status</th><th>Repay</th></tr>
+    {% for l in loans %}
+    <tr>
+      <td><a class="strong" href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
+      <td class="num">{{ l.principal | money }}</td>
+      <td class="num strong">{{ l.outstanding_balance | money }}</td>
+      <td>{{ l.next_due_date | when }} {% if l.loan_id in overdue_loans %}{{ badge('Overdue') }}{% endif %}</td>
+      <td>{{ badge(l.status) }}</td>
+      <td>
+        {% if l.status == 'Active' %}{% include "_repay_buttons.html" %}
+        {% else %}<span class="muted">waiting for approval</span>{% endif %}
+      </td>
+    </tr>
     {% else %}
-      <p class="empty">No notifications.</p>
+    <tr><td colspan="6" class="empty">No open loans. <a href="{{ url_for('my_loans') }}">Apply for one</a></td></tr>
     {% endfor %}
-    {% if notifications %}
-      <form method="post" action="{{ url_for('mark_notifications_read') }}">
-        <button class="secondary small">Mark all as read</button>
-      </form>
-    {% endif %}
+  </table>
   </div>
-</div>
-
-<h2>My accounts</h2>
-<div class="table-wrap">
-<table>
-  <tr>
-    <th>Account</th><th>Type</th><th>Branch</th><th class="num">Balance</th>
-    <th class="num">Spent this month</th><th class="num">Budget left</th><th>Status</th>
-  </tr>
-  {% for a in accounts %}
-  <tr>
-    <td><a href="{{ url_for('account_detail', account_id=a.account_id) }}">{{ a.account_id }}</a></td>
-    <td>{{ a.account_type }}</td>
-    <td>{{ a.branch_name }}</td>
-    <td class="num">{{ a.balance | money }}</td>
-    <td class="num">{{ a.spent_this_month | money }}</td>
-    <td class="num">{{ a.budget_remaining | money if a.budget_remaining is not none else '-' }}</td>
-    <td><span class="badge {{ a.status }}">{{ a.status }}</span></td>
-  </tr>
-  {% else %}
-  <tr><td colspan="7" class="empty">No accounts yet.
-    {% if customer.kyc_status == 'Approved' %}<a href="{{ url_for('open_account') }}">Open one</a>{% endif %}</td></tr>
-  {% endfor %}
-</table>
-</div>
-
-<h2>My loans</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Loan</th><th class="num">Outstanding</th><th>Next due</th><th>Status</th><th>Repay</th></tr>
-  {% for l in loans %}
-  <tr>
-    <td><a href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
-    <td class="num">{{ l.outstanding_balance | money }}</td>
-    <td>{{ l.next_due_date or '-' }}</td>
-    <td><span class="badge {{ l.status }}">{{ l.status }}</span></td>
-    <td>
-      {% if l.status == 'Active' %}{% include "_repay_buttons.html" %}
-      {% else %}<span class="muted">waiting for approval</span>{% endif %}
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="5" class="empty">No open loans. <a href="{{ url_for('my_loans') }}">Apply for one</a></td></tr>
-  {% endfor %}
-</table>
 </div>
 {% endblock %}

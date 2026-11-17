@@ -1,62 +1,73 @@
 {% extends "base.html" %}
+{% from "_ui.html" import badge, card_header %}
 {% block title %}Move money{% endblock %}
+{% block sub %}Transfer between accounts or request a deposit / withdrawal{% endblock %}
 {% block content %}
-<h1>Move money</h1>
-
 {% if not accounts %}
-  <p class="empty">You have no active accounts.</p>
+  <div class="alert amber">{{ icon('info') }}<div>You have no active accounts.
+    <a href="{{ url_for('open_account') }}">Open an account</a> first.</div></div>
 {% else %}
-<div class="grid">
+<div class="row halves">
   <!-- Transfer: instant -->
   <form method="post" action="{{ url_for('transfer') }}" class="card">
-    <h2>Transfer</h2>
-    <p class="muted">Happens instantly if all checks pass.</p>
-    <input type="hidden" name="key" value="{{ new_key() }}">
-    <label>From
-      <select name="from_account">
-        {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} ({{ a.account_type }}, {{ a.balance | money }})</option>{% endfor %}
-      </select>
-    </label>
-    <label>To account number <input type="number" name="to_account" required></label>
-    <label>Amount <input type="number" name="amount" min="0.01" step="0.01" required></label>
-    <button>Send money</button>
+    {{ card_header('Transfer', 'repeat') }}
+    <div class="card-body">
+      <div class="alert blue">{{ icon('info') }}<div>Happens <b>instantly</b> if all checks pass
+        (balance, daily limit, budget).</div></div>
+      <input type="hidden" name="key" value="{{ new_key() }}">
+      <label class="field">From account
+        <select name="from_account">
+          {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} · {{ a.account_type }} · {{ a.balance | money }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">To account number <input type="number" name="to_account" required></label>
+      <label class="field">Amount (Rs) <input type="number" name="amount" min="0.01" step="0.01" required></label>
+      <button class="btn block">{{ icon('send') }} Send money</button>
+    </div>
   </form>
 
   <!-- Deposit / withdrawal: needs employee approval -->
   <form method="post" action="{{ url_for('cash_request') }}" class="card">
-    <h2>Deposit or withdraw</h2>
-    <p class="muted">Sent to an employee for approval. Your balance changes only after approval.</p>
-    <input type="hidden" name="key" value="{{ new_key() }}">
-    <label>Type
-      <select name="type"><option>Deposit</option><option>Withdrawal</option></select>
-    </label>
-    <label>Account
-      <select name="account_id">
-        {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} ({{ a.account_type }}, {{ a.balance | money }})</option>{% endfor %}
-      </select>
-    </label>
-    <label>Amount <input type="number" name="amount" min="0.01" step="0.01" required></label>
-    <button>Send request</button>
+    {{ card_header('Deposit or withdraw', 'cash', 'green') }}
+    <div class="card-body">
+      <div class="alert amber">{{ icon('clock') }}<div>Sent to an employee for <b>approval</b>.
+        Your balance changes only after it is approved.</div></div>
+      <input type="hidden" name="key" value="{{ new_key() }}">
+      <div class="form-grid">
+        <label class="field">Type
+          <select name="type"><option>Deposit</option><option>Withdrawal</option></select>
+        </label>
+        <label class="field">Account
+          <select name="account_id">
+            {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} · {{ a.account_type }} · {{ a.balance | money }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <label class="field">Amount (Rs) <input type="number" name="amount" min="0.01" step="0.01" required></label>
+      <button class="btn block success">{{ icon('check') }} Send request</button>
+    </div>
   </form>
 </div>
 {% endif %}
 
-<h2>My recent deposit / withdrawal requests</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>ID</th><th>Date</th><th>Type</th><th>Account</th><th class="num">Amount</th><th>Status</th></tr>
-  {% for t in my_requests %}
-  <tr>
-    <td>{{ t.transaction_id }}</td>
-    <td>{{ t.created_at }}</td>
-    <td>{{ t.type }}</td>
-    <td>{{ t.source_account_id or t.destination_account_id }}</td>
-    <td class="num">{{ t.amount | money }}</td>
-    <td><span class="badge {{ t.status }}">{{ t.status }}</span></td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="empty">No requests yet.</td></tr>
-  {% endfor %}
-</table>
+<div class="card">
+  {{ card_header('My recent deposit / withdrawal requests', 'clock', 'amber') }}
+  <div class="table-wrap">
+  <table>
+    <tr><th>ID</th><th>Date</th><th>Type</th><th>Account</th><th class="num">Amount</th><th>Status</th></tr>
+    {% for t in my_requests %}
+    <tr>
+      <td class="strong">{{ t.transaction_id }}</td>
+      <td>{{ t.created_at | when }}</td>
+      <td>{{ t.type }}</td>
+      <td>{{ t.source_account_id or t.destination_account_id }}</td>
+      <td class="num strong">{{ t.amount | money }}</td>
+      <td>{{ badge(t.status) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No requests yet.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 {% endblock %}

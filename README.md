@@ -19,7 +19,10 @@ database/
 app/
   app.py               every web page (Flask routes), grouped by role
   db.py                the only file that talks to MySQL (query / execute / call)
-  templates/           HTML pages (Jinja)
+  icons.py             the small set of inline SVG icons used by the pages
+  templates/           HTML pages (Jinja): base.html is the sidebar layout,
+                       _auth.html the login/register layout, _ui.html the shared
+                       pieces (stat tile, card header, status badge)
   static/style.css     the one stylesheet
 ```
 

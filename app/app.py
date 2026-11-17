@@ -10,8 +10,10 @@ shows MySQL's message to the user.
 Run:  python app.py   then open http://127.0.0.1:5000
 """
 import os
+import re
 import secrets
 import uuid
+from datetime import date, datetime
 from functools import wraps
 
 import mysql.connector
@@ -19,10 +21,12 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import call, close_db, execute, get_db, query, query_one
+from icons import icon
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")  # signs the session cookie
 app.teardown_appcontext(close_db)
+app.jinja_env.globals["icon"] = icon   # {{ icon('bell') }} in any template or macro
 
 
 # =====================================================================
@@ -65,13 +69,52 @@ def template_helpers():
     # new_key() puts a fresh idempotency key in every money form.
     # If the same form is submitted twice, the key repeats and the
     # UNIQUE constraint on transactions.idempotency_key rejects the copy.
-    return {"new_key": lambda: uuid.uuid4().hex}
+    return {"new_key": lambda: uuid.uuid4().hex, "unread_count": unread_count}
+
+
+def unread_count():
+    """Number shown on the bell in the top bar (customers only)."""
+    try:
+        row = query_one("SELECT COUNT(*) AS n FROM notifications WHERE user_id = %s AND is_read = FALSE",
+                        (session["user_id"],))
+        return row["n"]
+    except mysql.connector.Error:
+        return 0   # never break a page (e.g. the error page) just for the bell
 
 
 @app.template_filter("money")
 def money(value):
     """Show 12345.5 as Rs 12,345.50 in templates:  {{ amount | money }}"""
     return "Rs {:,.2f}".format(value or 0)
+
+
+@app.template_filter("money0")
+def money0(value):
+    """Short form for the big tiles: Rs 12,346"""
+    return "Rs {:,.0f}".format(value or 0)
+
+
+@app.template_filter("when")
+def when(value):
+    """Show dates as 05 Oct 2026 and date-times as 12 Nov 2026, 18:30."""
+    if isinstance(value, datetime):
+        return value.strftime("%d %b %Y, %H:%M")
+    if isinstance(value, date):
+        return value.strftime("%d %b %Y")
+    return value or "-"
+
+
+@app.template_filter("words")
+def words(value):
+    """NeedsCorrection -> Needs Correction, BranchManager -> Branch Manager"""
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(value))
+
+
+@app.template_filter("initials")
+def initials(name):
+    """Rahul Verma -> RV (for the round avatar)"""
+    parts = (name or "?").split()
+    return (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
 
 
 # =====================================================================
@@ -253,10 +296,13 @@ def customer_home():
         "ORDER BY loan_id",
         (uid,),
     )
+    overdue = query(
+        "SELECT * FROM v_overdue_installments WHERE customer_id = %s ORDER BY due_date", (uid,)
+    )
     return render_template(
         "customer_home.html",
         customer=customer, latest_kyc=latest_kyc,
-        accounts=accounts, notifications=notifications, loans=loans,
+        accounts=accounts, notifications=notifications, loans=loans, overdue=overdue,
     )
 
 

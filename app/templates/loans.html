@@ -1,52 +1,55 @@
 {% extends "base.html" %}
+{% from "_ui.html" import badge, card_header %}
 {% block title %}My loans{% endblock %}
 {% block content %}
-<h1>My loans</h1>
-
-<div class="table-wrap">
-<table>
-  <tr><th>Loan</th><th class="num">Amount</th><th>Rate</th><th>Months</th><th>Paid</th>
-      <th class="num">Outstanding</th><th>Next due</th><th>Status</th><th>Repay</th></tr>
-  {% for l in loans %}
-  <tr>
-    <td><a href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
-    <td class="num">{{ l.principal | money }}</td>
-    <td>{{ l.interest_rate }}%</td>
-    <td>{{ l.tenure_months }}</td>
-    <td>{{ l.installments_paid }} / {{ l.tenure_months }}</td>
-    <td class="num">{{ l.outstanding_balance | money }}</td>
-    <td>{{ l.next_due_date or '-' }}</td>
-    <td><span class="badge {{ l.status }}">{{ l.status }}</span></td>
-    <td>
-      {% if l.status == 'Active' %}
-        {% include "_repay_buttons.html" %}
-      {% else %}-{% endif %}
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="9" class="empty">No loans yet.</td></tr>
-  {% endfor %}
-</table>
+<div class="card">
+  {{ card_header('My loans', 'file') }}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Loan</th><th class="num">Amount</th><th>Rate</th><th>Paid</th>
+        <th class="num">Outstanding</th><th>Next due</th><th>Status</th><th>Repay</th></tr>
+    {% for l in loans %}
+    <tr>
+      <td><a class="strong" href="{{ url_for('loan_detail', loan_id=l.loan_id) }}">{{ l.loan_id }}</a></td>
+      <td class="num">{{ l.principal | money }}</td>
+      <td>{{ l.interest_rate }}%</td>
+      <td>{{ l.installments_paid }} / {{ l.tenure_months }}</td>
+      <td class="num strong">{{ l.outstanding_balance | money }}</td>
+      <td>{{ l.next_due_date | when }}</td>
+      <td>{{ badge(l.status) }}</td>
+      <td>{% if l.status == 'Active' %}{% include "_repay_buttons.html" %}{% else %}-{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="empty">No loans yet.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 
-<h2>Apply for a loan</h2>
-{% if accounts %}
-<form method="post" action="{{ url_for('apply_loan') }}" class="card narrow" style="margin-left:0">
-  <label>Amount <input type="number" name="principal" min="1000" step="0.01" required></label>
-  <label>Months
-    <select name="tenure_months">
-      <option>3</option><option selected>6</option><option>12</option><option>24</option>
-    </select>
-  </label>
-  <label>Pay into / repay from account
-    <select name="linked_account_id">
-      {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} ({{ a.account_type }})</option>{% endfor %}
-    </select>
-  </label>
-  <p class="muted">Interest rate: 10.50% per year. An employee reviews every application.</p>
-  <button>Apply</button>
-</form>
-{% else %}
-  <p class="empty">You need an active account before you can apply for a loan.</p>
-{% endif %}
+<div class="card narrow">
+  {{ card_header('Apply for a loan', 'plus', 'green') }}
+  <div class="card-body">
+  {% if accounts %}
+    <form method="post" action="{{ url_for('apply_loan') }}">
+      <div class="form-grid">
+        <label class="field">Amount (Rs) <input type="number" name="principal" min="1000" step="0.01" required></label>
+        <label class="field">Months
+          <select name="tenure_months">
+            <option>3</option><option selected>6</option><option>12</option><option>24</option>
+          </select>
+        </label>
+      </div>
+      <label class="field">Pay into / repay from account
+        <select name="linked_account_id">
+          {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.account_id }} ({{ a.account_type }})</option>{% endfor %}
+        </select>
+      </label>
+      <p class="muted small">Interest rate: 10.50% per year. An employee reviews every application.</p>
+      <button class="btn">{{ icon('send') }} Apply</button>
+    </form>
+  {% else %}
+    <p class="muted">You need an active account before you can apply for a loan.</p>
+  {% endif %}
+  </div>
+</div>
 {% endblock %}

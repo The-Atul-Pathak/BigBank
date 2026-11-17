@@ -1,18 +1,25 @@
-{% extends "base.html" %}
+{% extends "_auth.html" %}
 {% block title %}Log in{% endblock %}
 {% block content %}
-<div class="narrow">
-  <h1>Log in</h1>
-  <form method="post" class="card">
-    <label>Email <input type="email" name="email" required autofocus></label>
-    <label>Password <input type="password" name="password" required></label>
-    <button>Log in</button>
-  </form>
-  <p>New customer? <a href="{{ url_for('register') }}">Create an account</a></p>
-  <p class="muted">Demo logins (password <code>password123</code>):
-    rahul@bigbank.in (customer), aman@bigbank.in (customer, KYC pending),
-    meera@bigbank.in / arjun@bigbank.in (employee / manager, Dwarka),
-    vikram@bigbank.in / neha@bigbank.in (employee / manager, Rohini),
-    kiran@bigbank.in (auditor)</p>
+<h1>Log in</h1>
+<p class="muted" style="margin:0 0 24px">Welcome back. Sign in to your account.</p>
+
+<form method="post" class="card">
+  <div class="card-body">
+    <label class="field">Email <input type="email" name="email" required autofocus></label>
+    <label class="field">Password <input type="password" name="password" required></label>
+    <button class="btn block">Log in</button>
+  </div>
+  <div class="card-footer small">New customer? <a href="{{ url_for('register') }}">Create an account</a></div>
+</form>
+
+<div class="small muted">Demo logins, password <code>password123</code>:</div>
+<div class="chips">
+  <span><b>rahul@</b> customer</span>
+  <span><b>aman@</b> KYC pending</span>
+  <span><b>meera@</b> / <b>arjun@</b> Dwarka staff / manager</span>
+  <span><b>vikram@</b> / <b>neha@</b> Rohini staff / manager</span>
+  <span><b>kiran@</b> auditor</span>
 </div>
+<p class="small muted">All emails end in <code>@bigbank.in</code></p>
 {% endblock %}

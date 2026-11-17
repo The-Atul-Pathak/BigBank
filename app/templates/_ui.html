@@ -1,0 +1,28 @@
+{# Small building blocks used by many pages.
+   Import them with:  {% from "_ui.html" import tile, badge, card_header %} #}
+
+{# A coloured number box: big value, label, faded icon and a link at the bottom. #}
+{% macro tile(color, value, label, icon_name, link, link_text, hint='') %}
+<div class="tile {{ color }}">
+  <div class="inner">
+    <div class="value">{{ value }}</div>
+    <div class="label">{{ label }}</div>
+    {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+  </div>
+  {{ icon(icon_name, 'big') }}
+  <a class="foot" href="{{ link }}">{{ link_text }} {{ icon('arrow') }}</a>
+</div>
+{% endmacro %}
+
+{# Status pill, coloured by the status name (see .badge in style.css). #}
+{% macro badge(status) %}<span class="badge {{ status }}">{{ status | words }}</span>{% endmacro %}
+
+{# Card title row with an icon. Buttons for the right side go in a call block:
+     {% call card_header('Loans', 'file') %}<a class="btn sm light" href="...">Apply</a>{% endcall %} #}
+{% macro card_header(title, icon_name, color='blue') %}
+<div class="card-header">
+  <div class="ico {{ color }}">{{ icon(icon_name) }}</div>
+  <h2>{{ title }}</h2>
+  {% if caller %}<div class="tools">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}

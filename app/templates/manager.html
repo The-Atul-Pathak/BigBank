@@ -1,61 +1,61 @@
 {% extends "base.html" %}
+{% from "_ui.html" import tile, card_header %}
 {% block title %}My branch{% endblock %}
+{% block heading %}{{ branch.name }}{% endblock %}
+{% block sub %}IFSC {{ branch.ifsc }}{% endblock %}
 {% block content %}
-<h1>{{ branch.name }} <span class="muted">{{ branch.ifsc }}</span></h1>
-
-<div class="grid">
-  <div class="card">
-    <h2>Money held</h2>
-    <p class="stat">{{ branch.total_balance | money }}</p>
-    <p class="muted">in {{ branch.accounts }} account{{ 's' if branch.accounts != 1 }}</p>
-  </div>
-  <div class="card">
-    <h2>Loans and staff</h2>
-    <p class="stat">{{ branch.active_loans }}</p>
-    <p class="muted">active loan{{ 's' if branch.active_loans != 1 }},
-      {{ branch.employees }} staff member{{ 's' if branch.employees != 1 }}</p>
-  </div>
+<div class="tiles">
+  {{ tile('teal', branch.total_balance | money0, 'Money held', 'wallet', url_for('staff_accounts'), 'View accounts',
+          'in ' ~ branch.accounts ~ ' account(s)') }}
+  {{ tile('green', branch.accounts, 'Accounts', 'card', url_for('staff_accounts'), 'View accounts') }}
+  {{ tile('amber', branch.active_loans, 'Active loans', 'file', url_for('staff_loans'), 'View loans') }}
+  {{ tile('slate', branch.employees, 'Staff members', 'users', '#staff', 'View staff') }}
 </div>
 
 {% if new_employee %}
-<div class="card" style="border-color: var(--green)">
-  <h2>Employee added: {{ new_employee.name }} (#{{ new_employee.user_id }})</h2>
-  <p>Give these login details to the new employee. The password is shown <strong>only once</strong>.
-     They should change it after their first login (<em>Profile</em> link at the top).</p>
-  <p>Login ID: <code>{{ new_employee.email }}</code><br>
-     Temporary password: <code>{{ new_employee.password }}</code></p>
+<div class="alert green">{{ icon('check') }}
+  <div><b>Employee added: {{ new_employee.name }} (#{{ new_employee.user_id }}).</b>
+    Give these login details to the new employee. The password is shown <b>only once</b>;
+    they should change it on their profile page after the first login.<br>
+    Login ID <code>{{ new_employee.email }}</code> · temporary password <code>{{ new_employee.password }}</code></div>
 </div>
 {% endif %}
 
-<h2>Add an employee to {{ branch.name }}</h2>
-<form method="post" action="{{ url_for('add_employee') }}" class="card">
-  <div class="grid">
-    <label>Full name <input name="name" required maxlength="60"></label>
-    <label>Login email <input type="email" name="email" required maxlength="80" placeholder="name@bigbank.in"></label>
-    <label>Phone <input name="phone" maxlength="15"></label>
-    <label>Designation
-      <select name="designation">
-        <option>Clerk</option><option>Cashier</option><option>Loan Officer</option>
-      </select>
-    </label>
-  </div>
-  <p class="muted">The new employee joins this branch and reports to you. A temporary password is created for them.</p>
-  <button>Add employee</button>
-</form>
+<div class="row wide-right">
+  <form method="post" action="{{ url_for('add_employee') }}" class="card">
+    {{ card_header('Add an employee to ' ~ branch.name, 'userplus') }}
+    <div class="card-body">
+      <label class="field">Full name <input name="name" required maxlength="60"></label>
+      <label class="field">Login email <input type="email" name="email" required maxlength="80" placeholder="name@bigbank.in"></label>
+      <div class="form-grid">
+        <label class="field">Phone <input name="phone" maxlength="15"></label>
+        <label class="field">Designation
+          <select name="designation">
+            <option>Clerk</option><option>Cashier</option><option>Loan Officer</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted small">The new employee joins this branch and reports to you. A temporary password is created for them.</p>
+      <button class="btn block">{{ icon('userplus') }} Add employee</button>
+    </div>
+  </form>
 
-<h2>Staff of this branch</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>ID</th><th>Name</th><th>Login email</th><th>Designation</th><th>Reports to</th></tr>
-  {% for s in staff %}
-  <tr>
-    <td>{{ s.user_id }}</td>
-    <td>{{ s.name }}</td>
-    <td>{{ s.email }}</td>
-    <td>{{ s.designation }}</td>
-    <td>{{ s.manager_name or '-' }}</td>
-  </tr>
-  {% endfor %}
-</table>
+  <div class="card" id="staff">
+    {{ card_header('Staff of this branch', 'users', 'green') }}
+    <div class="table-wrap">
+    <table>
+      <tr><th>ID</th><th>Name</th><th>Login email</th><th>Designation</th><th>Reports to</th></tr>
+      {% for s in staff %}
+      <tr>
+        <td class="strong">{{ s.user_id }}</td>
+        <td class="strong">{{ s.name }}</td>
+        <td>{{ s.email }}</td>
+        <td><span class="badge {{ 'info' if not s.manager_name }}">{{ s.designation }}</span></td>
+        <td>{{ s.manager_name or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
 </div>
 {% endblock %}

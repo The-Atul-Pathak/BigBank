@@ -1,49 +1,57 @@
 {% extends "base.html" %}
+{% from "_ui.html" import badge, card_header %}
 {% block title %}Loans{% endblock %}
+{% block sub %}Loans of your branch{% endblock %}
 {% block content %}
-<h1>Loans</h1>
-
-<h2>Overdue installments ({{ overdue | length }})</h2>
-<form method="post" action="{{ url_for('mark_overdue') }}" style="margin-bottom:12px">
-  <button class="secondary">Run overdue check now</button>
-  <span class="muted">Marks unpaid installments past their due date as Overdue and notifies the customer.
-    Also runs automatically every day.</span>
-</form>
-<div class="table-wrap">
-<table>
-  <tr><th>Loan</th><th>#</th><th>Customer</th><th>Due date</th><th class="num">EMI</th><th class="num">Days overdue</th></tr>
-  {% for o in overdue %}
-  <tr>
-    <td>{{ o.loan_id }}</td>
-    <td>{{ o.installment_no }}</td>
-    <td>{{ o.customer_name }}</td>
-    <td>{{ o.due_date }}</td>
-    <td class="num">{{ o.emi | money }}</td>
-    <td class="num">{{ o.days_overdue }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="empty">No overdue installments.</td></tr>
-  {% endfor %}
-</table>
+<div class="card">
+  {% call card_header('Overdue installments', 'alert', 'red') %}
+    <span class="badge Overdue">{{ overdue | length }} overdue</span>
+  {% endcall %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Loan</th><th>#</th><th>Customer</th><th>Due date</th><th class="num">EMI</th><th class="num">Days overdue</th></tr>
+    {% for o in overdue %}
+    <tr>
+      <td class="strong">{{ o.loan_id }}</td>
+      <td>{{ o.installment_no }}</td>
+      <td class="strong">{{ o.customer_name }}</td>
+      <td>{{ o.due_date | when }}</td>
+      <td class="num">{{ o.emi | money }}</td>
+      <td class="num strong">{{ o.days_overdue }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No overdue installments.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <form method="post" action="{{ url_for('mark_overdue') }}" class="card-footer actions">
+    <button class="btn sm light">{{ icon('clock') }} Run overdue check now</button>
+    <span class="small muted">Marks unpaid installments past their due date as Overdue and notifies the
+      customer. Also runs automatically every day.</span>
+  </form>
 </div>
 
-<h2>All loans</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Loan</th><th>Customer</th><th class="num">Amount</th><th>Rate</th><th>Paid</th>
-      <th class="num">Outstanding</th><th>Next due</th><th>Status</th></tr>
-  {% for l in loans %}
-  <tr>
-    <td>{{ l.loan_id }}</td>
-    <td>{{ l.customer_name }}</td>
-    <td class="num">{{ l.principal | money }}</td>
-    <td>{{ l.interest_rate }}%</td>
-    <td>{{ l.installments_paid }} / {{ l.tenure_months }}</td>
-    <td class="num">{{ l.outstanding_balance | money }}</td>
-    <td>{{ l.next_due_date or '-' }}</td>
-    <td><span class="badge {{ l.status }}">{{ l.status }}</span></td>
-  </tr>
-  {% endfor %}
-</table>
+<div class="card">
+  {{ card_header('All loans', 'file') }}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Loan</th><th>Customer</th><th class="num">Amount</th><th>Rate</th><th>Paid</th>
+        <th class="num">Outstanding</th><th>Next due</th><th>Status</th></tr>
+    {% for l in loans %}
+    <tr>
+      <td class="strong">{{ l.loan_id }}</td>
+      <td class="strong">{{ l.customer_name }}</td>
+      <td class="num">{{ l.principal | money }}</td>
+      <td>{{ l.interest_rate }}%</td>
+      <td>{{ l.installments_paid }} / {{ l.tenure_months }}</td>
+      <td class="num strong">{{ l.outstanding_balance | money }}</td>
+      <td>{{ l.next_due_date | when }}</td>
+      <td>{{ badge(l.status) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="empty">No loans yet.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 {% endblock %}
