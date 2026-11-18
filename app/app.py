@@ -2,26 +2,31 @@
 app.py - BigBank website (Flask).
 
 The website is deliberately thin. It shows pages and forwards the user's
-actions to MySQL. Every banking rule (KYC before account, balance checks,
+actions to the database. Every banking rule (KYC before account, balance checks,
 daily limit, audit log...) is enforced INSIDE the database by triggers and
-stored procedures. If MySQL refuses something, the error handler below
-shows MySQL's message to the user.
+stored procedures. If PostgreSQL refuses something, the error handler below
+shows the database's message to the user.
 
 Run:  python app.py   then open http://127.0.0.1:5000
 """
 import os
 import re
 import secrets
+import sys
 import uuid
 from datetime import date, datetime
 from functools import wraps
 
-import mysql.connector
+import psycopg
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import call, close_db, execute, get_db, query, query_one
-from icons import icon
+# Let "import db" find db.py next to this file, also when a host such as
+# Vercel loads app/app.py from the project root.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from db import call, close_db, execute, query, query_one, transaction  # noqa: E402
+from icons import icon  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")  # signs the session cookie
@@ -48,16 +53,18 @@ def login_required(*roles):
     return decorator
 
 
-@app.errorhandler(mysql.connector.Error)
+@app.errorhandler(psycopg.Error)
 def handle_db_error(err):
-    """MySQL refused something (e.g. a trigger or procedure ran SIGNAL).
-    Show its message and send the user back to the page they came from."""
-    if err.errno == 1062 and "idempotency_key" in err.msg:
+    """The database refused something (e.g. a trigger or procedure ran
+    RAISE EXCEPTION). Show its message and send the user back to the page
+    they came from."""
+    constraint = err.diag.constraint_name or ""
+    if isinstance(err, psycopg.errors.UniqueViolation) and "idempotency_key" in constraint:
         message = "This request was already submitted."
-    elif err.errno == 1062 and "email" in err.msg:
+    elif isinstance(err, psycopg.errors.UniqueViolation) and "email" in constraint:
         message = "This email is already registered."
     else:
-        message = err.msg
+        message = err.diag.message_primary or str(err)
     if request.method == "POST":
         flash(message, "error")
         return redirect(request.referrer or url_for("home"))
@@ -78,7 +85,7 @@ def unread_count():
         row = query_one("SELECT COUNT(*) AS n FROM notifications WHERE user_id = %s AND is_read = FALSE",
                         (session["user_id"],))
         return row["n"]
-    except mysql.connector.Error:
+    except psycopg.Error:
         return 0   # never break a page (e.g. the error page) just for the bell
 
 
@@ -163,22 +170,16 @@ def register():
         password_hash = generate_password_hash(f["password"], method="pbkdf2:sha256")
 
         # Two INSERTs that must succeed or fail together -> one DB transaction.
-        db = get_db()
-        db.start_transaction()
-        try:
+        with transaction():
             user_id = execute(
                 "INSERT INTO users (name, email, phone, password_hash, role) "
-                "VALUES (%s, %s, %s, %s, 'Customer')",
+                "VALUES (%s, %s, %s, %s, 'Customer') RETURNING user_id",
                 (f["name"], f["email"].strip().lower(), f["phone"], password_hash),
             )
             execute(
                 "INSERT INTO customers (user_id, dob, address) VALUES (%s, %s, %s)",
                 (user_id, f["dob"], f["address"]),
             )
-            db.commit()
-        except mysql.connector.Error:
-            db.rollback()
-            raise
 
         flash("Account created. Please log in.", "success")
         return redirect(url_for("login"))
@@ -224,18 +225,12 @@ def update_profile():
     uid = session["user_id"]
 
     # Customers have details in two tables -> one DB transaction for both UPDATEs.
-    db = get_db()
-    db.start_transaction()
-    try:
+    with transaction():
         execute("UPDATE users SET name = %s, phone = %s WHERE user_id = %s",
                 (f["name"], f["phone"] or None, uid))
         if session["role"] == "Customer":
             execute("UPDATE customers SET address = %s WHERE user_id = %s",
                     (f["address"] or None, uid))
-        db.commit()
-    except mysql.connector.Error:
-        db.rollback()
-        raise
 
     session["name"] = f["name"]   # so the top bar shows the new name
     flash("Profile updated.", "success")
@@ -343,7 +338,7 @@ def open_account():
         # is not approved or the daily limit is too high.
         new_id = execute(
             "INSERT INTO accounts (customer_id, branch_id, account_type_id, daily_limit, spending_budget) "
-            "VALUES (%s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING account_id",
             (session["user_id"], f["branch_id"], f["account_type_id"],
              f["daily_limit"], f["spending_budget"] or None),
         )
@@ -365,7 +360,7 @@ def account_detail(account_id):
 
     # Statement: every transaction where this account is the source or the destination
     statement = query(
-        "SELECT *, IF(destination_account_id = %s, 'Credit', 'Debit') AS direction "
+        "SELECT *, CASE WHEN destination_account_id = %s THEN 'Credit' ELSE 'Debit' END AS direction "
         "FROM transactions "
         "WHERE source_account_id = %s OR destination_account_id = %s "
         "ORDER BY created_at DESC, transaction_id DESC",
@@ -465,7 +460,7 @@ def apply_loan():
     # trg_loans_before_insert makes sure the linked account is the customer's own.
     loan_id = execute(
         "INSERT INTO loans (customer_id, linked_account_id, principal, tenure_months) "
-        "VALUES (%s, %s, %s, %s)",
+        "VALUES (%s, %s, %s, %s) RETURNING loan_id",
         (session["user_id"], request.form["linked_account_id"],
          request.form["principal"], request.form["tenure_months"]),
     )
@@ -673,7 +668,7 @@ def staff_loans():
 @app.route("/staff/loans/mark-overdue", methods=["POST"])
 @login_required(*STAFF)
 def mark_overdue():
-    # The same procedure also runs automatically every day (MySQL EVENT).
+    # The same procedure also runs automatically every day (pg_cron job).
     call("sp_mark_overdue")
     flash("Overdue check done.", "success")
     return redirect(url_for("staff_loans"))
@@ -697,11 +692,11 @@ def add_employee():
     temp_password = secrets.token_urlsafe(6)          # random, e.g. 'q7Rk-2xA'
     password_hash = generate_password_hash(temp_password, method="pbkdf2:sha256")
 
-    # The last argument (0) is a placeholder for the OUT parameter p_new_user_id.
+    # The last argument (None) is a placeholder for the OUT parameter p_new_user_id.
     result = call("sp_add_employee", (session["user_id"], f["name"], f["email"].strip().lower(),
-                                      f["phone"] or None, password_hash, f["designation"], 0))
+                                      f["phone"] or None, password_hash, f["designation"], None))
     new_employee = {
-        "user_id": result[6],
+        "user_id": result["p_new_user_id"],
         "name": f["name"],
         "email": f["email"].strip().lower(),
         "password": temp_password,

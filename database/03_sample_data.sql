@@ -36,9 +36,7 @@
 --  G. Reversal example: Divya's wrong deposit 9011 reversed by 9012 (Anjali).
 -- =====================================================================
 
-USE banking_system;
-
-SET @pw = 'pbkdf2:sha256:1000000$eLlGBlXFfRDAkeUB$f923f8f8065ca87423d63b39afffa31d145fe229f6e56a1e11c1db719cf594c1';
+SET search_path = banking_system;
 
 -- ---------------------------------------------------------------------
 INSERT INTO branches (branch_id, name, ifsc) VALUES
@@ -48,26 +46,30 @@ INSERT INTO branches (branch_id, name, ifsc) VALUES
     (3, 'Janakpuri',       'BNKS0000103');
 
 -- ---------------------------------------------------------------------
-INSERT INTO users (user_id, name, email, phone, password_hash, role) VALUES
-    (101, 'Rahul Verma',    'rahul@bigbank.in', '9810000101', @pw, 'Customer'),
-    (102, 'Sneha Rao',      'sneha@bigbank.in', '9810000102', @pw, 'Customer'),
-    (103, 'Aman Singh',     'aman@bigbank.in',  '9810000103', @pw, 'Customer'),
-    (201, 'Meera Kapoor',   'meera@bigbank.in', '9810000201', @pw, 'Employee'),
-    (202, 'Vikram Shah',    'vikram@bigbank.in','9810000202', @pw, 'Employee'),
-    (301, 'Arjun Malhotra', 'arjun@bigbank.in', '9810000301', @pw, 'BranchManager'),
-    (302, 'Neha Gupta',     'neha@bigbank.in',  '9810000302', @pw, 'BranchManager'),
-    (401, 'Kiran Nair',     'kiran@bigbank.in', '9810000401', @pw, 'Auditor'),
+-- Every user gets the same password hash (password123), set once in the SELECT.
+INSERT INTO users (user_id, name, email, phone, role, password_hash)
+SELECT v.*, 'pbkdf2:sha256:1000000$eLlGBlXFfRDAkeUB$f923f8f8065ca87423d63b39afffa31d145fe229f6e56a1e11c1db719cf594c1'
+FROM (VALUES
+    (101, 'Rahul Verma',    'rahul@bigbank.in', '9810000101', 'Customer'),
+    (102, 'Sneha Rao',      'sneha@bigbank.in', '9810000102', 'Customer'),
+    (103, 'Aman Singh',     'aman@bigbank.in',  '9810000103', 'Customer'),
+    (201, 'Meera Kapoor',   'meera@bigbank.in', '9810000201', 'Employee'),
+    (202, 'Vikram Shah',    'vikram@bigbank.in','9810000202', 'Employee'),
+    (301, 'Arjun Malhotra', 'arjun@bigbank.in', '9810000301', 'BranchManager'),
+    (302, 'Neha Gupta',     'neha@bigbank.in',  '9810000302', 'BranchManager'),
+    (401, 'Kiran Nair',     'kiran@bigbank.in', '9810000401', 'Auditor'),
     -- ---- more sample data ----
-    (104, 'Priya Sharma',   'priya@bigbank.in',  '9810000104', @pw, 'Customer'),
-    (105, 'Karan Mehta',    'karan@bigbank.in',  '9810000105', @pw, 'Customer'),
-    (106, 'Divya Nair',     'divya@bigbank.in',  '9810000106', @pw, 'Customer'),
-    (107, 'Mohit Jain',     'mohit@bigbank.in',  '9810000107', @pw, 'Customer'),
-    (108, 'Ishita Bansal',  'ishita@bigbank.in', '9810000108', @pw, 'Customer'),
-    (203, 'Pooja Mehta',    'pooja@bigbank.in',  '9810000203', @pw, 'Employee'),
-    (204, 'Rohit Sharma',   'rohit@bigbank.in',  '9810000204', @pw, 'Employee'),
-    (205, 'Deepak Yadav',   'deepak@bigbank.in', '9810000205', @pw, 'Employee'),
-    (206, 'Anjali Desai',   'anjali@bigbank.in', '9810000206', @pw, 'Employee'),
-    (303, 'Suresh Iyer',    'suresh@bigbank.in', '9810000303', @pw, 'BranchManager');
+    (104, 'Priya Sharma',   'priya@bigbank.in',  '9810000104', 'Customer'),
+    (105, 'Karan Mehta',    'karan@bigbank.in',  '9810000105', 'Customer'),
+    (106, 'Divya Nair',     'divya@bigbank.in',  '9810000106', 'Customer'),
+    (107, 'Mohit Jain',     'mohit@bigbank.in',  '9810000107', 'Customer'),
+    (108, 'Ishita Bansal',  'ishita@bigbank.in', '9810000108', 'Customer'),
+    (203, 'Pooja Mehta',    'pooja@bigbank.in',  '9810000203', 'Employee'),
+    (204, 'Rohit Sharma',   'rohit@bigbank.in',  '9810000204', 'Employee'),
+    (205, 'Deepak Yadav',   'deepak@bigbank.in', '9810000205', 'Employee'),
+    (206, 'Anjali Desai',   'anjali@bigbank.in', '9810000206', 'Employee'),
+    (303, 'Suresh Iyer',    'suresh@bigbank.in', '9810000303', 'BranchManager')
+) AS v(user_id, name, email, phone, role);
 
 -- ---------------------------------------------------------------------
 INSERT INTO customers (user_id, dob, address, kyc_status) VALUES
@@ -253,6 +255,18 @@ INSERT INTO notifications (user_id, category, message, transaction_id, is_read, 
     (105, 'Transaction', 'Your withdrawal of Rs 5000.00 was rejected',             9009, FALSE, '2026-11-15 11:00:00');
 
 
+-- ---------------------------------------------------------------------
+-- The rows above were inserted with fixed ids. Move each id counter past
+-- the highest id, so new rows (e.g. a new account) continue from there.
+-- (MySQL's AUTO_INCREMENT does this by itself.)
+SELECT setval(pg_get_serial_sequence('branches', 'branch_id'),             (SELECT MAX(branch_id) FROM branches));
+SELECT setval(pg_get_serial_sequence('users', 'user_id'),                  (SELECT MAX(user_id) FROM users));
+SELECT setval(pg_get_serial_sequence('kyc_records', 'kyc_id'),             (SELECT MAX(kyc_id) FROM kyc_records));
+SELECT setval(pg_get_serial_sequence('account_types', 'account_type_id'), (SELECT MAX(account_type_id) FROM account_types));
+SELECT setval(pg_get_serial_sequence('accounts', 'account_id'),            (SELECT MAX(account_id) FROM accounts));
+SELECT setval(pg_get_serial_sequence('transactions', 'transaction_id'),    (SELECT MAX(transaction_id) FROM transactions));
+SELECT setval(pg_get_serial_sequence('loans', 'loan_id'),                  (SELECT MAX(loan_id) FROM loans));
+
 -- =====================================================================
 -- EXAMPLE QUERIES (section 8 of the report)
 -- =====================================================================
@@ -273,7 +287,7 @@ ORDER BY created_at;
 
 -- 3. Overdue installments with days overdue
 SELECT loan_id, installment_no, due_date,
-       DATEDIFF(CURDATE(), due_date) AS days_overdue
+       CURRENT_DATE - due_date AS days_overdue
 FROM loan_installments
 WHERE status = 'Overdue';
 

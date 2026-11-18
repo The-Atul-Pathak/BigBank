@@ -1,24 +1,28 @@
 # BigBank: Banking Management System
 
-DBMS Lab project (COCSC302). This is a banking database in MySQL, with a small Flask
-website on top of it.
+DBMS Lab project (COCSC302). This is a banking database in PostgreSQL (originally
+written for MySQL), with a small Flask website on top of it.
+
+**Live demo:** https://bigbank-fawn.vercel.app (website on Vercel, database on Aiven,
+both on free plans).
 
 The main idea is that **the bank's rules live inside the database**, as triggers, stored
 procedures, CHECK constraints and views. The website only shows pages and passes the
-user's actions to MySQL. If a rule fails, MySQL raises an error and the website shows
-that error message.
+user's actions to the database. If a rule fails, the database raises an error and the
+website shows that error message.
 
 ## Project structure
 
 ```
 database/
   01_schema.sql        12 tables with PK, FK, UNIQUE, CHECK constraints
-  02_logic.sql         4 views, 1 function, 10 triggers, 9 procedures, 1 daily event
+  02_logic.sql         4 views, 1 function, 10 triggers, 9 procedures, 1 daily pg_cron job
   03_sample_data.sql   sample data from the report + the 5 example queries
-  04_access.sql        DCL: roles, GRANT / REVOKE, the website's MySQL user
+  04_access.sql        DCL: roles, GRANT / REVOKE, the website's database user
+  mysql/               the original MySQL 8 version of the same four files
 app/
   app.py               every web page (Flask routes), grouped by role
-  db.py                the only file that talks to MySQL (query / execute / call)
+  db.py                the only file that talks to the database (query / execute / call)
   icons.py             the small set of inline SVG icons used by the pages
   templates/           HTML pages (Jinja): base.html is the sidebar layout,
                        _auth.html the login/register layout, _ui.html the shared
@@ -28,15 +32,20 @@ app/
 
 ## How to run
 
-You need MySQL 8.0.16 or newer (for CHECK constraints) and Python 3.9 or newer.
+You need PostgreSQL 14 or newer and Python 3.9 or newer.
 
-**1. Load the database** (enter your MySQL root password when asked):
+**1. Load the database.** Everything is created in the schema `banking_system` of the
+database you connect to. Set `DB_URL` to your admin connection (for Aiven, the Service URI
+from the console), then run the four files in order:
 
 ```bash
-mysql -u root -p < database/01_schema.sql
-mysql -u root -p < database/02_logic.sql
-mysql -u root -p < database/03_sample_data.sql
-mysql -u root -p < database/04_access.sql
+for f in database/0*.sql; do psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+```
+
+Then give the website's database user a password:
+
+```bash
+psql "$DB_URL" -c "ALTER ROLE bigbank_app PASSWORD 'choose-a-long-password'"
 ```
 
 Running the four files again resets everything to the sample data.
@@ -53,10 +62,28 @@ python app.py
 
 Then open http://127.0.0.1:5000.
 
-The website connects as the MySQL user `bigbank_app` (password `bigbank123`), which
-`04_access.sql` creates. To connect as a different user, set environment variables first,
-for example `DB_USER=root DB_PASSWORD=yourpass python app.py`. `DB_HOST` and `DB_PORT`
-can be set the same way.
+The website connects as the database user `bigbank_app`, which `04_access.sql` creates.
+Tell it where the database is with environment variables, either one URL:
+
+```bash
+DATABASE_URL='postgres://bigbank_app:yourpass@host:port/defaultdb?sslmode=require' python app.py
+```
+
+or the separate `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` and `DB_NAME`. If
+`DB_SSL_CA` holds the provider's CA certificate (the PEM text), the server's certificate
+is verified too.
+
+## Deployment (Vercel + Aiven, free plans)
+
+- **Database:** Aiven for PostgreSQL, Free plan (service `bigbank-db`, Bangalore). The
+  four SQL files were loaded as `avnadmin`; the daily overdue check is a `pg_cron` job
+  (00:05 UTC). Free services are powered off after a long period of inactivity; start it
+  again from the Aiven console if the site cannot connect.
+- **Website:** Vercel, Hobby plan, project `bigbank`, function region Mumbai (`bom1`).
+  Vercel runs `app/app.py` as a Flask app (see `vercel.json`). Its environment variables
+  are `DATABASE_URL` (as `bigbank_app`), `DB_SSL_CA` (Aiven's CA certificate) and
+  `SECRET_KEY` (signs the login cookie).
+- **Redeploy** after a change: `vercel deploy --prod` from the project folder.
 
 ## Demo logins
 
@@ -117,7 +144,7 @@ Every sample user's password is `password123`.
 | Daily limit ≤ account type's max | triggers `trg_accounts_before_insert/update` | 02_logic.sql |
 | Balance never negative, amount > 0 | `CHECK` constraints | 01_schema.sql |
 | Deposit has no source, withdrawal has no destination | `CHECK chk_txn_accounts` | 01_schema.sql |
-| Transfer is all-or-nothing | `START TRANSACTION` … `COMMIT`, `ROLLBACK` in the error handler | `sp_transfer` |
+| Transfer is all-or-nothing | one `CALL` is one transaction: any `RAISE EXCEPTION` rolls back everything | `sp_transfer` |
 | No deadlock when two transfers cross | lock the lower account_id first (`FOR UPDATE`) | `sp_transfer` |
 | Same request can't be processed twice | `UNIQUE (idempotency_key)` | 01_schema.sql |
 | Deposits/withdrawals need employee approval | inserted as `Pending`, balance changes only in `sp_review_transaction` | 02_logic.sql |
@@ -127,7 +154,7 @@ Every sample user's password is `password123`.
 | Repay whole loan, all-or-nothing | `sp_repay_loan` (pays each unpaid installment, then closes the loan) | 02_logic.sql |
 | Staff only touch their own branch | branch check in `sp_review_transaction`, `sp_reverse_transaction`, `sp_approve_loan` + `WHERE branch_id = my branch` in app.py | 02_logic.sql, app.py |
 | Manager adds staff only to own branch | `sp_add_employee` has no branch parameter: it uses the manager's branch | 02_logic.sql |
-| Late installments flagged | `sp_mark_overdue` + daily `EVENT` | 02_logic.sql |
+| Late installments flagged | `sp_mark_overdue` + daily `pg_cron` job | 02_logic.sql |
 | Over-budget warning | `sp_check_budget` → notification | 02_logic.sql |
 | Audit log written automatically | `AFTER UPDATE` triggers on kyc_records, accounts, loans, transactions | 02_logic.sql |
 | Audit log can't be changed | triggers `trg_audit_no_update/delete` + no UPDATE/DELETE grant | 02_logic.sql, 04_access.sql |
@@ -139,8 +166,17 @@ Every sample user's password is `password123`.
 `v_loan_summary`), and `days_overdue` (in `v_overdue_installments`).
 
 **How a trigger knows who did something:** every time the website opens a connection
-it runs `SET @app_user_id = <logged-in user id>` (see `db.py`), and the audit triggers
-read `@app_user_id`. When testing in the MySQL terminal, run `SET @app_user_id = 201;` first.
+it runs `SELECT set_config('app.user_id', '<logged-in user id>', false)` (see `db.py`),
+and the audit triggers read it with `current_setting('app.user_id', true)`. When testing
+in `psql`, run `SET app.user_id = '201';` first.
+
+**MySQL → PostgreSQL:** the rules are the same, only the syntax changed. `SIGNAL` became
+`RAISE EXCEPTION`, each trigger is a trigger function plus `CREATE TRIGGER`,
+`AUTO_INCREMENT` became `GENERATED BY DEFAULT AS IDENTITY`, `LAST_INSERT_ID()` became
+`RETURNING ... INTO`, and the daily `EVENT` became a `pg_cron` job. Procedures and trigger
+functions are `SECURITY DEFINER`, which matches MySQL's default of running with the
+creator's rights. The demo roles in `04_access.sql` are `NOLOGIN` because the database is
+on the internet; try them with `SET ROLE` as shown in that file.
 
 ## Loan installment formula
 
