@@ -64,13 +64,22 @@ Every sample user's password is `password123`.
 
 | Email | Role | Good for showing |
 |---|---|---|
-| rahul@bigbank.in | Customer | 2 accounts, an active loan with an overdue installment |
-| sneha@bigbank.in | Customer | 1 account, a pending deposit |
+| rahul@bigbank.in | Customer, Dwarka | 2 accounts, an active loan with an overdue installment |
+| sneha@bigbank.in | Customer, Rohini | 1 account, a pending deposit |
 | aman@bigbank.in | Customer | KYC still pending, so he cannot open an account |
+| priya@bigbank.in | Customer, Dwarka | over her monthly budget, one frozen account (5008), loan with 2 of 4 EMIs paid |
+| karan@bigbank.in | Customer, Rohini | a fully repaid (Closed) loan and a Rejected loan |
+| divya@bigbank.in | Customer, Janakpuri | a loan request still waiting for approval, a reversed deposit |
+| mohit@bigbank.in | Customer | KYC Rejected |
+| ishita@bigbank.in | Customer | KYC NeedsCorrection |
 | meera@bigbank.in | Employee, Dwarka | work queue: KYC, deposits/withdrawals, loans |
-| arjun@bigbank.in | Branch Manager, Dwarka | everything Meera can do + branch page + add employees |
-| vikram@bigbank.in | Employee, Rohini | approves Sneha's requests (her account is in Rohini) |
+| pooja@bigbank.in | Senior Clerk, Dwarka | reports to Arjun; Rohit reports to her |
+| rohit@bigbank.in | Employee, Dwarka | reports to Pooja (Rohit → Pooja → Arjun) |
+| arjun@bigbank.in | Branch Manager, Dwarka | everything staff can do + branch page + add employees |
+| vikram@bigbank.in, deepak@bigbank.in | Employee, Rohini | approve Sneha's and Karan's requests |
 | neha@bigbank.in | Branch Manager, Rohini | same as Arjun, for Rohini |
+| anjali@bigbank.in | Employee, Janakpuri | can approve Divya's pending loan 7004 |
+| suresh@bigbank.in | Branch Manager, Janakpuri | same as Arjun, for Janakpuri |
 | kiran@bigbank.in | Auditor | read-only audit log |
 
 ## A 5-minute demo
@@ -83,21 +92,22 @@ Every sample user's password is `password123`.
 3. **Atomic transfer.** As Rahul, transfer Rs 500 from 5001 to 5003. Then try Rs 99,999:
    *"Insufficient balance"*, and nothing changes (`sp_transfer` rolls back).
 4. **Approval workflow.** As Meera, approve withdrawal 9003 (Rs 40,000). It is refused
-   because Rahul only has Rs 25,000. Reject it instead. Approve Sneha's deposit 9004 and
-   her balance goes up.
+   because Rahul only has Rs 25,000. Reject it instead. Sneha's deposit 9004 is in Rohini,
+   so Meera can't see it: log in as Vikram, approve it, and her balance goes up.
 5. **Reversal.** As Meera, open *Transactions* and reverse a transfer. A new transaction
    moves the money back, and the original row is untouched.
-6. **Loans.** As Sneha, apply for a loan. As Vikram (Sneha's branch), approve it: the money
-   is paid out and the installments are created. As Sneha, use *Pay next EMI* or
-   *Repay full loan* (on the dashboard or the *Loans* page).
-   Meera can't see or approve it, because it belongs to another branch.
+6. **Loans.** As Anjali (Janakpuri), approve Divya's pending loan 7004: the money is paid
+   out and the installments are created. Meera can't see or approve it, because it belongs
+   to another branch. As Divya, use *Pay next EMI* or *Repay full loan* (on the dashboard
+   or the *Loans* page). Karan's loan 7003 shows a fully repaid (Closed) loan.
 7. **Overdue.** As Meera, open *Loans* and click *Run overdue check*. Rahul's installment
-   3 (due 2026-11-05) becomes Overdue.
+   3 (due 2026-11-05) becomes Overdue, next to installment 2 which is already overdue.
 8. **Onboarding.** As Arjun, open *My branch* and add an employee. A temporary password is
    shown once. Log in as the new employee: they see only Dwarka's data and can change
    their name, phone and password on the *Profile* page.
 9. **Audit.** Log in as Kiran. Every action above is in the audit log, with who did it
-   and the old and new values.
+   and the old and new values. Priya's frozen account 5008 and the reversal of Divya's
+   wrong deposit (9011 by 9012) are already in the sample data.
 
 ## Where each rule lives
 
@@ -148,6 +158,8 @@ and interest of 525.00, then 437.50, then 350.00, and so on.
 ## Simplifications (on purpose)
 
 - All loans use one interest rate (10.50%, the column default).
+- There is no beneficiary (saved payee) feature: a transfer takes the destination
+  account number directly.
 - Sample balances are opening balances, so they are not the sum of the sample transactions.
 - Statuses `Approved` and `Failed` are allowed in `transactions.status` (to match the
   report) but are not used. A failed transfer is rolled back and never saved.
